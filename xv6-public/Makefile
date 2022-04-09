@@ -31,6 +31,8 @@ OBJS = \
 	rr_scheduler.o\
 	mlfq_scheduler.o\
 	impl_getlev.o\
+	fraction.o\
+	impl_set_cpu_share.o\
 
 # Cross-compiling (e.g., on Mac OS X)
 ifeq ($(shell uname), Darwin)
@@ -189,6 +191,7 @@ UPROGS=\
 	_zombie\
 	_getppid_test\
 	_yieldtest\
+	_fractiontest\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
@@ -263,6 +266,7 @@ EXTRA=\
 	.gdbinit.tmpl gdbutil\
 	getppid_test.c\
 	yieldtest.c\
+	fractiontest.c\
 
 dist:
 	rm -rf dist
