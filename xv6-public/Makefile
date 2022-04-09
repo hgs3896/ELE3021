@@ -185,6 +185,7 @@ UPROGS=\
 	_wc\
 	_zombie\
 	_getppid_test\
+	_yieldtest\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
@@ -258,6 +259,7 @@ EXTRA=\
 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
 	.gdbinit.tmpl gdbutil\
 	getppid_test.c\
+	yieldtest.c\
 
 dist:
 	rm -rf dist

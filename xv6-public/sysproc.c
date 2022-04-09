@@ -89,3 +89,11 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// yield the current cpu
+int
+sys_yield(void)
+{
+  yield();
+  return 0;
+}
