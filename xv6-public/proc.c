@@ -143,6 +143,11 @@ userinit(void)
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
+  p->lev = 0;
+  p->cticks = 0;
+  // Push it to MLFQ
+  mlfq_push(p);
+
   // this assignment to p->state lets other cores
   // run this process. the acquire forces the above
   // writes to be visible, and the lock is also needed
@@ -213,6 +218,11 @@ fork(void)
 
   pid = np->pid;
 
+  np->lev = 0;
+  np->cticks = 0;
+  // Push it to MLFQ
+  mlfq_push(np);
+
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
@@ -264,6 +274,7 @@ exit(void)
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
+  mlfq_remove(curproc);
   sched();
   panic("zombie exit");
 }
@@ -332,7 +343,8 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    rr_scheduler(c); // Use a xv6 default RR scheduler
+    mlfq_scheduler(c);
+    // rr_scheduler(c); // Use a xv6 default RR scheduler
     release(&ptable.lock);
 
   }
@@ -442,9 +454,12 @@ wakeup1(void *chan)
 {
   struct proc *p;
 
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state == SLEEPING && p->chan == chan){
       p->state = RUNNABLE;
+      mlfq_push(p);
+    }
+  }
 }
 
 // Wake up all processes sleeping on chan.
@@ -469,8 +484,10 @@ kill(int pid)
     if(p->pid == pid){
       p->killed = 1;
       // Wake process from sleep if necessary.
-      if(p->state == SLEEPING)
+      if(p->state == SLEEPING){
         p->state = RUNNABLE;
+        mlfq_push(p);
+      }
       release(&ptable.lock);
       return 0;
     }
@@ -514,4 +531,5 @@ procdump(void)
     }
     cprintf("\n");
   }
+  mlfq_print();
 }
