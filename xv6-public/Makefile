@@ -30,6 +30,7 @@ OBJS = \
 	impl_getppid.o\
 	rr_scheduler.o\
 	mlfq_scheduler.o\
+	impl_getlev.o\
 
 # Cross-compiling (e.g., on Mac OS X)
 ifeq ($(shell uname), Darwin)
