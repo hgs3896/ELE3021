@@ -9,10 +9,10 @@
 #include "mlfq_scheduler.h"
 
 #define GET_MIN(a, b) ((a) < (b) ? (a) : (b))
-#define BEGIN(mlfq)   (((mlfq)->f + 1) % (NPROC+1))
-#define NEXT(iter)    (((iter) + 1) % (NPROC+1))
-#define PREV(iter)    (((iter) + NPROC) % (NPROC+1))
-#define END(mlfq)     (((mlfq)->r + 1) % (NPROC+1))
+#define BEGIN(mlfq) (((mlfq)->f + 1) % (NPROC + 1))
+#define NEXT(iter) (((iter) + 1) % (NPROC + 1))
+#define PREV(iter) (((iter) + NPROC) % (NPROC + 1))
+#define END(mlfq) (((mlfq)->r + 1) % (NPROC + 1))
 
 extern struct {
   struct spinlock lock;
@@ -100,14 +100,12 @@ mlfq_empty(int lev)
 }
 
 int
-mlfq_remove(struct proc* p)
+mlfq_remove(struct proc *p)
 {
   int lev = p->lev, idx;
-  for(idx = BEGIN(&mlfq[lev]);
-      idx != END(&mlfq[lev]);
-      idx = NEXT(idx)) {
-    if(mlfq[lev].items[idx] == p){
-      for(;idx!=mlfq[lev].f;idx = PREV(idx)){
+  for(idx = BEGIN(&mlfq[lev]); idx != END(&mlfq[lev]); idx = NEXT(idx)) {
+    if(mlfq[lev].items[idx] == p) {
+      for(; idx != mlfq[lev].f; idx = PREV(idx)) {
         mlfq[lev].items[idx] = mlfq[lev].items[PREV(idx)];
       }
       mlfq[lev].items[mlfq[lev].f] = 0;
@@ -123,7 +121,7 @@ mlfq_boost_priority(void)
 {
   int lev;
   struct proc *p;
-  for(lev = 1; lev < NMLFQ; lev++) {
+  for(lev = NMLFQ - 1; lev > 0; lev--) {
     while(queue_size(&mlfq[lev]) > 0) {
       p = queue_front(&mlfq[lev]);
       queue_pop_item(&mlfq[lev]);
@@ -138,21 +136,19 @@ inline int
 mlfq_has_to_yield(void)
 {
   int left;
-  struct proc* p = myproc();
+  struct proc *p = myproc();
   switchkvm();
   mlfq_ticks += 1;   // Increase the MLFQ tick count
   p->cticks += 1;    // Increase the process's tick count
   mlfq_ticks_left--; // Decrease the time quantom for this queue
 
   if(mlfq_ticks % MLFQ_BOOSTING_TICKS == 0) {
-    // mlfq_print();
     cprintf("Priority Boosting Occurs\n");
     mlfq_boost_priority();
-    // mlfq_print();
+    mlfq_ticks %= MLFQ_BOOSTING_TICKS;
   }
   left = mlfq_ticks_left;
   switchuvm(p);
-  // cprintf("%d\n", left);
   return left <= 0;
 }
 
@@ -160,22 +156,16 @@ void
 mlfq_print(void)
 {
   int lev, idx;
-  static const char* state2str[] = {
-    [UNUSED]    "unused",
-    [EMBRYO]    "embryo",
-    [SLEEPING]  "sleep ",
-    [RUNNABLE]  "runble",
-    [RUNNING]   "run   ",
-    [ZOMBIE]    "zombie"
-  };
+  static const char *state2str[] = {
+      [UNUSED] "unused",   [EMBRYO] "embryo",  [SLEEPING] "sleep ",
+      [RUNNABLE] "runble", [RUNNING] "run   ", [ZOMBIE] "zombie"};
   cprintf("MLFQ Queue Info\n");
   for(lev = 0; lev < NMLFQ; lev++) {
     cprintf("Level %d (%d)\n", lev, queue_size(&mlfq[lev]));
     cprintf("f=%d, r=%d\n", mlfq[lev].f, mlfq[lev].r);
-    for(idx = BEGIN(&mlfq[lev]);
-        idx != END(&mlfq[lev]);
-        idx = NEXT(idx))
-      cprintf("[%d] %s %s\n", idx, state2str[mlfq[lev].items[idx]->state], mlfq[lev].items[idx]->name);
+    for(idx = BEGIN(&mlfq[lev]); idx != END(&mlfq[lev]); idx = NEXT(idx))
+      cprintf("[%d] %s %s\n", idx, state2str[mlfq[lev].items[idx]->state],
+              mlfq[lev].items[idx]->name);
     cprintf("\n");
   }
 }
@@ -197,20 +187,21 @@ mlfq_is_in_mlfq(struct proc *p)
 void
 mlfq_scheduler(struct cpu *c)
 {
-  int lev, idx;
+  int lev, idx, begin, end;
   struct proc *p;
 
   for(lev = 0; lev < NMLFQ; lev++) {
-    for(idx = BEGIN(&mlfq[lev]); idx != END(&mlfq[lev]); idx = NEXT(idx)){
-      if(mlfq[lev].items[idx]->state == RUNNABLE){
+    begin = BEGIN(&mlfq[lev]), end = END(&mlfq[lev]);
+    for(idx = begin; idx != end; idx = NEXT(idx)) {
+      mlfq_pop(&p, lev); // Get a process from MLFQ
+      if(p->state == RUNNABLE) {
         goto mlfq_found;
       }
+      mlfq_push(p);
     }
     continue;
-    
-  mlfq_found:  
-    // Get a process from MLFQ
-    mlfq_pop(&p, lev);
+
+  mlfq_found:
     mlfq_ticks_left = MLFQ_MAX_TICKS[p->lev];
 
     // Switch to chosen process.  It is the process's job
@@ -228,7 +219,7 @@ mlfq_scheduler(struct cpu *c)
       p->lev = GET_MIN(p->lev + 1, NMLFQ - 1); // Lower the priority level
     }
 
-    if(p->state == RUNNABLE || p->state == SLEEPING || p->state == RUNNING){
+    if(p->state == RUNNABLE) {
       mlfq_push(p); // Push the process into MLFQ
     }
 

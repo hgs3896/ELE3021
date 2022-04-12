@@ -17,4 +17,4 @@ int mlfq_has_to_yield(void);
 void mlfq_scheduler(struct cpu *c);
 void mlfq_print(void);
 int mlfq_is_in_mlfq(struct proc *p);
-int mlfq_remove(struct proc* p);
+int mlfq_remove(struct proc *p);
