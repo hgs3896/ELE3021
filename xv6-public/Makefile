@@ -192,6 +192,7 @@ UPROGS=\
 	_getppid_test\
 	_yieldtest\
 	_fractiontest\
+	_stridetests\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
@@ -267,6 +268,7 @@ EXTRA=\
 	getppid_test.c\
 	yieldtest.c\
 	fractiontest.c\
+	stridetests.c\
 
 dist:
 	rm -rf dist

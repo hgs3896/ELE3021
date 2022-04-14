@@ -42,3 +42,6 @@ int atoi(const char*);
 
 // impl_getlev.c
 int getlev(void);
+
+// impl_set_cpu_share.c
+int set_cpu_share(int);

@@ -193,5 +193,8 @@ int             getppid(void);
 // impl_getlev.c
 int             getlev(void);
 
+// impl_set_cpu_share.c
+int             set_cpu_share(int share);
+
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
