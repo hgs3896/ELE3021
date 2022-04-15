@@ -1,3 +1,4 @@
+#pragma once
 // Memory layout
 
 #define EXTMEM  0x100000            // Start of extended memory
