@@ -18,18 +18,18 @@ extern struct {
 int
 getlev(void)
 {
-    struct proc* p = myproc();
-    acquire(&ptable.lock);
-    uint lev = p->lev;
-    release(&ptable.lock);
-    if(0<= lev && lev < NMLFQ)
-        return lev;
-    return -1;
+  struct proc *p = myproc();
+  acquire(&ptable.lock);
+  uint lev = p->lev;
+  release(&ptable.lock);
+  if(0 <= lev && lev < NMLFQ)
+    return lev;
+  return -1;
 }
 
 // Wrapper for getlev
 int
 sys_getlev(void)
 {
-    return getlev();
+  return getlev();
 }

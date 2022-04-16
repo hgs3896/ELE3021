@@ -145,7 +145,7 @@ userinit(void)
 
   p->lev = 0;
   p->cticks = 0;
-  // Push it to MLFQ
+  // By default, push it to MLFQ
   mlfq_push(p);
 
   // this assignment to p->state lets other cores
@@ -220,7 +220,7 @@ fork(void)
 
   np->lev = 0;
   np->cticks = 0;
-  // Push it to MLFQ
+  // By default, push it to MLFQ
   mlfq_push(np);
 
   acquire(&ptable.lock);
@@ -274,7 +274,7 @@ exit(void)
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
-  mlfq_remove(curproc);
+  
   sched();
   panic("zombie exit");
 }
@@ -334,6 +334,16 @@ wait(void)
 void
 scheduler(void)
 {
+  // Setting for Stride Queue
+  {
+    // Initialize the stride queue
+    stride_init();
+    // Push MLFQ Item
+    StrideItem mlfq_item;
+    stride_item_init(&mlfq_item, 20, 0, 1);
+    stride_push(&mlfq_item);
+  }
+  
   struct cpu *c = mycpu();
   c->proc = 0;
   
@@ -343,7 +353,8 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    mlfq_scheduler(c);
+    // mlfq_scheduler(c); // Use a mlfq scheduler
+    stride_scheduler(c);
     // rr_scheduler(c); // Use a xv6 default RR scheduler
     release(&ptable.lock);
 
@@ -457,7 +468,6 @@ wakeup1(void *chan)
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->state == SLEEPING && p->chan == chan){
       p->state = RUNNABLE;
-      mlfq_push(p);
     }
   }
 }
@@ -486,7 +496,6 @@ kill(int pid)
       // Wake process from sleep if necessary.
       if(p->state == SLEEPING){
         p->state = RUNNABLE;
-        mlfq_push(p);
       }
       release(&ptable.lock);
       return 0;
@@ -531,5 +540,5 @@ procdump(void)
     }
     cprintf("\n");
   }
-  mlfq_print();
+  stride_print();
 }

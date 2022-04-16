@@ -6,7 +6,7 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
-#include "mlfq_scheduler.h"
+#include "schedulers.h"
 
 #define GET_MIN(a, b) ((a) < (b) ? (a) : (b))
 #define BEGIN(mlfq) (((mlfq)->f + 1) % (NPROC + 1))
@@ -24,8 +24,8 @@ struct proc_queue {
   struct proc *items[NPROC + 1];
 };
 
+struct spinlock mlfqlock;
 uint mlfq_ticks;
-int mlfq_ticks_left;
 mlfq_queue_t mlfq[NMLFQ];
 
 static inline int
@@ -99,28 +99,13 @@ mlfq_empty(int lev)
   return queue_size(&mlfq[lev]) == 0;
 }
 
-int
-mlfq_remove(struct proc *p)
-{
-  int lev = p->lev, idx;
-  for(idx = BEGIN(&mlfq[lev]); idx != END(&mlfq[lev]); idx = NEXT(idx)) {
-    if(mlfq[lev].items[idx] == p) {
-      for(; idx != mlfq[lev].f; idx = PREV(idx)) {
-        mlfq[lev].items[idx] = mlfq[lev].items[PREV(idx)];
-      }
-      mlfq[lev].items[mlfq[lev].f] = 0;
-      mlfq[lev].f = NEXT(mlfq[lev].f);
-      return 0;
-    }
-  }
-  return -1;
-}
-
-void
+static void
 mlfq_boost_priority(void)
 {
   int lev;
   struct proc *p;
+  for(int idx = BEGIN(&mlfq[0]); idx != END(&mlfq[0]); idx = NEXT(idx))
+    mlfq[0].items[idx]->cticks = 0;
   for(lev = NMLFQ - 1; lev > 0; lev--) {
     while(queue_size(&mlfq[lev]) > 0) {
       p = queue_front(&mlfq[lev]);
@@ -132,24 +117,40 @@ mlfq_boost_priority(void)
   }
 }
 
-inline int
-mlfq_has_to_yield(void)
+static int
+mlfq_need_boosting(void)
 {
-  int left;
-  struct proc *p = myproc();
-  switchkvm();
-  mlfq_ticks += 1;   // Increase the MLFQ tick count
-  p->cticks += 1;    // Increase the process's tick count
-  mlfq_ticks_left--; // Decrease the time quantom for this queue
+  int mlfq_has_to_boost = 0;
+  acquire(&mlfqlock); // Priority Boosting
+  mlfq_has_to_boost = mlfq_ticks >= MLFQ_BOOSTING_TICKS;
+  mlfq_ticks %= MLFQ_BOOSTING_TICKS;
+  release(&mlfqlock);
+  return mlfq_has_to_boost;
+}
 
-  if(mlfq_ticks % MLFQ_BOOSTING_TICKS == 0) {
-    cprintf("Priority Boosting Occurs\n");
-    mlfq_boost_priority();
-    mlfq_ticks %= MLFQ_BOOSTING_TICKS;
+int
+mlfq_has_to_yield(struct proc *p)
+{
+  static int mlfq_ticks_elapsed;
+
+  const uint MLFQ_MAX_TICK_OF_CURRENT_PROC = MLFQ_MAX_TICKS[getlev()];
+
+  if(mlfq_ticks_elapsed >= MLFQ_MAX_TICK_OF_CURRENT_PROC) {
+    mlfq_ticks_elapsed = 0;
   }
-  left = mlfq_ticks_left;
-  switchuvm(p);
-  return left <= 0;
+  mlfq_ticks_elapsed++; // Increase the time quantom for this queue
+
+  acquire(&mlfqlock);
+  mlfq_ticks += 1; // Increase the MLFQ tick count
+  release(&mlfqlock);
+
+  acquire(&ptable.lock);
+  p->cticks += 1; // Increase the process's tick count
+  if(mlfq_ticks_elapsed >= MLFQ_MAX_TICK_OF_CURRENT_PROC)
+    p->yield_by = 2;
+  release(&ptable.lock);
+
+  return mlfq_ticks_elapsed >= MLFQ_MAX_TICK_OF_CURRENT_PROC;
 }
 
 void
@@ -171,17 +172,9 @@ mlfq_print(void)
 }
 
 int
-mlfq_is_in_mlfq(struct proc *p)
+is_mlfq(struct proc *p)
 {
-  int idx = mlfq[p->lev].f;
-  while(1) {
-    idx = (idx + 1) % (NPROC + 1);
-    if(mlfq[p->lev].items[idx] == p)
-      return 1;
-    if(idx == mlfq[p->lev].r)
-      break;
-  };
-  return 0;
+  return p && p->lev >= 0 && p->lev < NMLFQ;
 }
 
 void
@@ -190,20 +183,20 @@ mlfq_scheduler(struct cpu *c)
   int lev, idx, begin, end;
   struct proc *p;
 
-  for(lev = 0; lev < NMLFQ; lev++) {
-    begin = BEGIN(&mlfq[lev]), end = END(&mlfq[lev]);
-    for(idx = begin; idx != end; idx = NEXT(idx)) {
-      mlfq_pop(&p, lev); // Get a process from MLFQ
-      if(p->state == RUNNABLE) {
-        goto mlfq_found;
+  while(1) {
+    for(lev = 0; lev < NMLFQ; lev++) {
+      begin = BEGIN(&mlfq[lev]), end = END(&mlfq[lev]);
+      for(idx = begin; idx != end; idx = NEXT(idx)) {
+        mlfq_pop(&p, lev);
+        if(p->state == RUNNABLE) {
+          goto mlfq_found;
+        }
+        mlfq_push(p);
       }
-      mlfq_push(p);
     }
-    continue;
+    return; // No runnable items found
 
   mlfq_found:
-    mlfq_ticks_left = MLFQ_MAX_TICKS[p->lev];
-
     // Switch to chosen process.  It is the process's job
     // to release ptable.lock and then reacquire it
     // before jumping back to us.
@@ -214,19 +207,34 @@ mlfq_scheduler(struct cpu *c)
     swtch(&(c->scheduler), p->context);
     switchkvm();
 
-    if(p->cticks >= MLFQ_TIME_ALLOTS[p->lev]) {
-      p->cticks = 0;                           // Reset the tick counts
-      p->lev = GET_MIN(p->lev + 1, NMLFQ - 1); // Lower the priority level
-    }
+    if(is_mlfq(p)) {
+      if(p->cticks >=
+         MLFQ_TIME_ALLOTS[p->lev]) { // Check if it has consumed its time allots
+        p->cticks = 0;               // Reset the tick counts
+        p->lev = GET_MIN(p->lev + 1, NMLFQ - 1); // Lower the priority level
+      }
 
-    if(p->state == RUNNABLE) {
-      mlfq_push(p); // Push the process into MLFQ
+      if(p->state != ZOMBIE) {
+        // Push a non-zombie process into MLFQ
+        mlfq_push(p);
+      }
+
+      if(mlfq_need_boosting()) {
+#if DEBUG_BOOSTING
+        cprintf("Priority Boosting Occurs\n");
+#endif
+        mlfq_boost_priority();
+      }
     }
 
     // Process is done running for now.
     // It should have changed its p->state before coming back.
     c->proc = 0;
 
-    break;
+    if(p->yield_by == 1) { // yield by stride
+      p->yield_by = 0;
+      return;
+    }
+    p->yield_by = 0;
   }
 }

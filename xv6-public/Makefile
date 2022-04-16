@@ -32,6 +32,7 @@ OBJS = \
 	mlfq_scheduler.o\
 	impl_getlev.o\
 	fraction.o\
+	stride_scheduler.o\
 	impl_set_cpu_share.o\
 
 # Cross-compiling (e.g., on Mac OS X)

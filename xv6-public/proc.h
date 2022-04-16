@@ -51,7 +51,8 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
   uint cticks;                 // Consumed tick count at the given level of the queue
-  uint lev;                    // Level in MLFQ, otherwise -1
+  uint yield_by :  4;          // the process is yield by stride = 1, mlfq = 2
+  uint lev      : 28;          // Level in MLFQ(0~NMLFQ), otherwise Stride Level
 };
 
 // Process memory is laid out contiguously, low addresses first:
