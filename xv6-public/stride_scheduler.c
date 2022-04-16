@@ -149,11 +149,17 @@ stride_top(void)
 }
 
 int
+stride_can_change_share(int old_share, int new_share)
+{
+  return stride_queue.all_share - old_share + new_share <= STRIDE_MAX_SHARE;
+}
+
+int
 stride_adjust(StrideItem *item, int new_share)
 {
   if(!item || heap_empty(&stride_queue.q))
     return -1;
-  if(stride_queue.all_share - item->share + new_share > STRIDE_MAX_SHARE)
+  if(!stride_can_change_share(item->share, new_share))
     return -1;
   stride_queue.all_share -= item->share;
   item->share = new_share;

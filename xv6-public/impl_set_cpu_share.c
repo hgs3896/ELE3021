@@ -22,6 +22,12 @@ set_cpu_share(int share)
   struct proc *p = myproc();
   acquire(&ptable.lock);
   if(is_mlfq(p)) {
+    if(!stride_can_change_share(0, share)) {
+      ret = -1;
+      release(&ptable.lock);
+      return ret;
+    }
+
     // Initialize the stride item
     p->lev = STRIDE_PROC_LEVEL;
     p->cticks = 0;

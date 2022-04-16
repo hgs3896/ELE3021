@@ -3,9 +3,9 @@
 #include "fraction.h"
 #include "param.h"
 
-#define STRIDE_MAX_TICKS  5
+#define STRIDE_MAX_TICKS 5
 #define STRIDE_PROC_LEVEL 100
-#define STRIDE_MAX_SHARE  100
+#define STRIDE_MAX_SHARE 100
 
 typedef struct StrideItem StrideItem;
 typedef struct StrideHeap StrideHeap;
@@ -40,6 +40,7 @@ void stride_init(void);
 int stride_push(const StrideItem *item);
 int stride_pop(void);
 StrideItem *stride_top(void);
+int stride_can_change_share(int old_share, int new_share);
 int stride_adjust(StrideItem *item, int new_share);
 void stride_scheduler(struct cpu *c);
 void stride_print(void);
