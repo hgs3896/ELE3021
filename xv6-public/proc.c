@@ -397,6 +397,17 @@ yield(void)
   release(&ptable.lock);
 }
 
+// Give up the CPU for one scheduling round with increasing cticks from the user request.
+void
+yield1(void)
+{
+  acquire(&ptable.lock);  //DOC: yieldlock
+  myproc()->cticks += 1;  // for preventing to game the scheduler
+  myproc()->state = RUNNABLE;
+  sched();
+  release(&ptable.lock);
+}
+
 // A fork child's very first scheduling by scheduler()
 // will swtch here.  "Return" to user space.
 void
