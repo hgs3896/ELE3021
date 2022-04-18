@@ -194,6 +194,7 @@ UPROGS=\
 	_yieldtest\
 	_fractiontest\
 	_stridetests\
+	_test_scheduler\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
@@ -270,6 +271,7 @@ EXTRA=\
 	yieldtest.c\
 	fractiontest.c\
 	stridetests.c\
+	test_scheduler.c\
 
 dist:
 	rm -rf dist
