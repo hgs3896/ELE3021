@@ -5,7 +5,8 @@
 
 #define STRIDE_MAX_TICKS 5
 #define STRIDE_PROC_LEVEL 100
-#define STRIDE_MAX_SHARE 100
+#define STRIDE_MLFQ_SHARE 22
+#define STRIDE_MAX_SHARE 102
 
 typedef struct StrideItem StrideItem;
 typedef struct StrideHeap StrideHeap;

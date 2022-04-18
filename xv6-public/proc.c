@@ -340,7 +340,7 @@ scheduler(void)
     stride_init();
     // Push MLFQ Item
     StrideItem mlfq_item;
-    stride_item_init(&mlfq_item, 20, 0, 1);
+    stride_item_init(&mlfq_item, STRIDE_MLFQ_SHARE, 0, 1);
     stride_push(&mlfq_item);
   }
   
