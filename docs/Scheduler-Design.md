@@ -130,11 +130,13 @@ flowchart TB
 - Implementaion Details
   - Metadata for MLFQ
     - To implement MLFQ in xv6, add extra metadata fields into `struct proc`
+      - To save the size of proc struct, use lev for 28 bits and yield_by for 4 bits
     ```c
     struct proc { // in proc.h
         ...
         uint cticks;                 // a consumed tick count at the given level of the queue
-        uint lev;                    // the level in MLFQ
+        uint yield_by :  4;          // if the process is yield by stride = 1, mlfq = 2
+        uint lev      : 28;          // Level in MLFQ(0~NMLFQ), otherwise Stride Level
         ...
     };
     ```
@@ -143,12 +145,13 @@ flowchart TB
     - Then, an implementation of `int getlev(void)` can become much simpler.
     ```c
     int get_lev(void){
-        uint lev;
-        struct proc* p = myproc();
+        struct proc *p = myproc();
         acquire(&ptable.lock);
-        lev = p->lev;
+        uint lev = p->lev;          // Fetch the priority level of MLFQ
         release(&ptable.lock);
-        return lev;
+        if(0 <= lev && lev < NMLFQ) // Check whether it is in MLFQ
+          return lev;
+        return -1;
     }
     ```
     - Increase tick counter(cticks) as the timer interrupt happens
@@ -164,47 +167,43 @@ flowchart TB
         // If interrupts were on while locks held, would need to check nlock.
         if(myproc() && myproc()->state == RUNNING &&
             tf->trapno == T_IRQ0+IRQ_TIMER) {
-            myproc()->cticks++; // increase the tick counter
-            // Did the process exhaust its tick allotment of the current queue?
-            if(is_ta_exhausted(myproc())){
-                mlfq_lowerlev(myproc())
-            }
-            // Did the current process exhaust its time quantom of the queue?
-            if(is_tq_exhausted(myproc())){
-                yield();
-            }
+            if(stride_has_to_yield(myproc()) || // If the stride scheduler needs to yield, yield.
+            (is_mlfq(myproc()) && mlfq_has_to_yield(myproc()))) { // if the MLFQ needs to yield, yield.
+            yield();
+          }
         }
 
         ...
     }
     ```
-    ```c
-    // Needs to be aquire ptable.lock
-    int
-    is_ta_exhausted(struct proc* p)
-    {
-        if(p->lev == STRIDE_LEVEL) return 0;
-        return p->cticks >= MLFQ[p->lev].TIME_ALLOTMENT;
-    }
-    ```
+
+    - checks whether the MLFQ has to yield or not and increase `mlfq_tick` counts together
     ```c
     int
-    is_tq_exhausted(struct proc* p)
+    mlfq_has_to_yield(struct proc *p)
     {
-        static uint time_quantom;
-        if(time_quantom != 0){
-            time_quantom--;
-            return 0;
-        }
-        if(p->lev == STRIDE_LEVEL) {
-            time_quantom = SQ.TIME_QUANTOM;
-        }else{
-            time_quantom = MLFQ[p->lev].TIME_QUANTOM;
-        }
-        return 1;
+      static int mlfq_ticks_elapsed; // internal counter for mlfq
+
+      const uint MLFQ_MAX_TICK_OF_CURRENT_PROC = MLFQ_MAX_TICKS[getlev()];
+
+      if(mlfq_ticks_elapsed >= MLFQ_MAX_TICK_OF_CURRENT_PROC) {
+        mlfq_ticks_elapsed = 0;
+      }
+      mlfq_ticks_elapsed++; // Increase the time quantom for this queue
+
+      acquire(&mlfqlock);
+      mlfq_ticks += 1; // Increase the MLFQ tick count
+      release(&mlfqlock);
+
+      acquire(&ptable.lock);
+      p->cticks += 1; // Increase the process's tick count
+      if(mlfq_ticks_elapsed >= MLFQ_MAX_TICK_OF_CURRENT_PROC)
+        p->yield_by = 2;
+      release(&ptable.lock);
+
+      return mlfq_ticks_elapsed >= MLFQ_MAX_TICK_OF_CURRENT_PROC;
     }
     ```
-    
 
 #### B) Stride Scheduling
 > Stride Scheduling is amazingly powerful to ensure the fairness due to its deterministic characteristics compared to lottery scheduling. If a small set of tasks are scheduled, that deterministic behaviors can show better performance than those nondeterministic.
@@ -230,19 +229,17 @@ flowchart TB
     - Make a fraction structure(`struct frac`)
     ```c
     struct frac { // fraction structure
-        uint nom, denom;
+      uint num;
+      uint denom;
     };
-    typedef struct frac frac;
-    void add(const frac* a, const frac* b, frac* c);
-    void zero(frac &x);
     ```
-    - Add extra fields to store passes and shares
+    - Make a `StrideItem struct` to store passes and shares of a given process and MLFQ
     ```c
-    struct proc { // in proc.h
-        ...
-        frac pass;                   // pass for Stride
-        frac stride;                 // stride for Stride
-        ...
+    struct StrideItem { // in stride_scheduler.h
+      frac pass;       // pass for Stride
+      uint isMLFQ : 1; // is mlfq = 1, ow = 0
+      int share   : 31;// stride for Stride
+      void *proc;      // pointer to struct proc
     };
     ```
 
@@ -250,33 +247,80 @@ flowchart TB
     - Existing Process in MLFQ wants to register: set_cpu_share()
     ```c
     int set_cpu_share(int share){
-        struct proc* p = myproc();
+        ...
         acquire(&ptable.lock);
-        MLFQ[p->lev].remove(&p);
+        if(is_mlfq(p)) { // where p is current process
+          // Initialize the stride item
+          p->lev = STRIDE_PROC_LEVEL;
+          p->cticks = 0;
+          stride_item_init(&stride_item, share, p, 0);
+          
+          ret = stride_push(&stride_item)); // Push it to the Stride queue
 
-        // pass = 0/1
-        p->pass.nom = 0;
-        p->pass.denom = 1;
-
-        // stride = 100/share
-        p->stride.nom = 1;
-        p->stride.denom = gcd(100, share); // gcd is a function of greatest common divisor
-
-        SQ.push(&p);
+          release(&ptable.lock); // Release the ptable lock for yield
+          yield(); // Yield the cpu for rescheduling
+          return ret;
+        } else if(is_stride(p)) {
+          // Find the stride item and adjust the share value
+          ret = stride_adjust(stride_find_item(p), share);
+        } else {
+          ret = -1;
+        }
         release(&ptable.lock);
+        return ret;
     }
     ```
 
     - Process Exchange: scheduler()
     ```c
-        struct proc* next_process;
+    void stride_scheduler(struct cpu *c){
+        next_process = stride_top();                         // Fetch a Runnable process
+
+        if(next_process->isMLFQ){
+          // Do MLFQ
+          mlfq_scheduler(c);
+        }else{
+          if(next_process->state != RUNNABLE)
+            goto stride_pass;
+          swtch(&(c->scheduler), p->context);       // Context Switch
+        }
+      stride_pass:
         next_process = SQ.pop();                    // Pop a RUNNABLE process with the minimum priority value (pass)
         ...
         next_process->state = RUNNING;              // Change its process state to RUNNING
         swtch(&(cpu->scheduler), next_process);     // Switch to another stack and then return
         ...
         next_process->pass += next_process->stride; // Increment pass value by its stride
-        SQ.push(&next_process);                      // Put it back with modfied priority value (pass)
+        stride->max_pass = max(stride->max_pass, next_process->pass) // Update the max pass
+        if(next_process->isMLFQ || next_process->state != ZOMBIE)    // Push mlfq always and non-zombie processes
+          SQ.push(&next_process);                   // Put it back with modfied priority value (pass)
+    }
+    ```
+
+    - checks whether the stride queue has to yield or not and increase `stride_ticks` counts together
+    ```c
+    int
+    stride_has_to_yield(struct proc *p)
+    {
+      static uint stride_ticks_elapsed; // internal counter for stride
+
+      if(stride_ticks_elapsed >= STRIDE_MAX_TICKS)
+        stride_ticks_elapsed = 0;
+
+      acquire(&stride_lock);
+      stride_ticks += 1; // Increase the Stride tick count
+      release(&stride_lock);
+
+      stride_ticks_elapsed++; // Increase the time quantom the current process can use
+
+      acquire(&ptable.lock);
+      p->cticks += 1; // Increase the process's tick count
+      if(stride_ticks_elapsed >= STRIDE_MAX_TICKS)
+        p->yield_by = 1; // Mark this field to 1 for Stride Scheduler to switch up
+      release(&ptable.lock);
+
+      return stride_ticks_elapsed >= STRIDE_MAX_TICKS;
+    }
     ```
 
 #### C) Combine the stride scheduling algorithm with MLFQ
@@ -299,6 +343,9 @@ stateDiagram
     SLEEPING --> RUNNABLE: wakeup, kill
     ZOMBIE --> UNUSED    : wait, exit
 ```
+To handle the process management in each scheduling,
+ - I inserted the process insertion code at `fork` and `userinit` in proc.c
+ - I inserted the process removal code at `scheduler` in proc.c
 
 ## 3. Required System Calls
 
@@ -318,8 +365,62 @@ stateDiagram
 - Return Value: 0 if successful, otherwise a negative number
 
 ## 4. Verify the scheduler
+### 10 Scheduling Scenarios
 
-There may be some scheduling scenarios to test the scheduler.
+- The workloads were tested 5 times each on Ubuntu 20.04 in ssh
+- To testify the scheduler properly, at least 5 processes were used
+- The charts and data were plotted from matplotlib.pyplot
+
+#### 1. 10 MLFQ processes
+![Workload 0](project1/workload0.png)
+Since MLFQ processes should be given a cpu equally, the exceptation matches the results.
+
+#### 2. 5 MLFQ processes counting levels
+![Workload 1](project1/workload1.png)
+|name|     type|  cnt| lev0| lev1| lev2|measured percent|
+| -  |    -    |  -  |  -  |  -  |  -  |       -        |
+|MLfQ|  compute|87375|11196|23006|53173|       19.630817|
+|MLfQ|  compute|89078|11941|23464|53673|       20.013435|
+|MLfQ|  compute|89112|11947|23482|53683|       20.021074|
+|MLfQ|  compute|89613|12547|23436|53630|       20.133636|
+|MLfQ|  compute|89913|12829|23468|53616|       20.201038|
+The ratio of lev0 and lev1 is almost 1:2, since the lev0 has 5ticks quantom and lev1 has 10ticks quantom.
+
+#### 3. 10 MLFQ processes yielding repeatedly
+![Workload 2](project1/workload2.png)
+This is similar as when 10 MLFQ process are running, but it has lesser counts due to yielding.
+
+#### 4. 5 MLFQ processes not only yielding repeatedly, but also counting levels
+![Workload 3](project1/workload3.png)
+It is a lock consuming the overall performance which both yield syscall and `getlev` have.
+|name| type|  cnt|lev0|lev1| lev2|measured percent|
+| -  |  -  |  -  | -  |  - |  -  |       -        |
+|MLfQ|yield|32464|3396|7612|21456|       19.165693|
+|MLfQ|yield|33358|4210|7690|21458|       19.693481|
+|MLfQ|yield|33853|4303|7435|22115|       19.985713|
+|MLfQ|yield|34497|4779|8258|21460|       20.365910|
+|MLfQ|yield|35214|4940|8819|21455|       20.789203|
+Compared to workload 2, the processes get smaller ticks, but the ratio stays almost same.
+
+#### 5. 5 MLFQ processes and 5 MLFQ processes yielding repeatedly
+![Workload 4](project1/workload4.png)
+
+#### 6. 10 Stride processes(8% share)
+![Workload 5](project1/workload5.png)
+Every stride process that has 8% share gets an equal share.
+
+#### 7. 8 Stride processes(1%,3%,5%,7%,11%,13%,17%,23% share respectively) and 2 MLFQ processes
+![Workload 6](project1/workload6.png)
+According to its share, 2 MLFQ processes have 22.134684% share in Stride.
+
+#### 8. 5 Stride processes(5% share), 2 Stride processes(10% share), 1 Stride process(15% share), 1 Stride process(20% share), and MLFQ process
+![Workload 7](project1/workload7.png)
+
+#### 9. 2 Stride processes(5% share), 2 Stride processes(10% share), 1 Stride process(20% share) and 5 MLFQ processes
+![Workload 8](project1/workload8.png)
+
+### 10. 2 Stride processes(5% share), 1 Stride process(10% share), 1 Stride process(15% share), 1 Stride process(45% share) and 5 MLFQ processes
+![Workload 9](project1/workload9.png)
 
 ## 5. Coding Conventions
 
