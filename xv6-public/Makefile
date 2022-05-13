@@ -196,6 +196,7 @@ UPROGS=\
 	_fractiontest\
 	_stridetests\
 	_test_scheduler\
+	_test_malloc\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
@@ -273,6 +274,7 @@ EXTRA=\
 	fractiontest.c\
 	stridetests.c\
 	test_scheduler.c\
+	test_malloc.c\
 
 dist:
 	rm -rf dist
