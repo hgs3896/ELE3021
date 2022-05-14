@@ -131,6 +131,7 @@ userinit(void)
     panic("userinit: out of memory?");
   inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
   p->sz = PGSIZE;
+  p->stack_sz = 0;
   memset(p->tf, 0, sizeof(*p->tf));
   p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
   p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
@@ -168,6 +169,8 @@ growproc(int n)
   struct proc *curproc = myproc();
 
   sz = curproc->sz;
+  if(sz + n + PGSIZE >= USERTOP - curproc->stack_sz)
+    return -1;
   if(n > 0){
     if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
@@ -196,13 +199,14 @@ fork(void)
   }
 
   // Copy process state from proc.
-  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
+  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz, curproc->stack_sz)) == 0){
     kfree(np->kstack);
     np->kstack = 0;
     np->state = UNUSED;
     return -1;
   }
   np->sz = curproc->sz;
+  np->stack_sz = curproc->stack_sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
 
@@ -354,7 +358,7 @@ scheduler(void)
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     // mlfq_scheduler(c); // Use a mlfq scheduler
-    stride_scheduler(c);
+    stride_scheduler(c); // Use a stride scheduler
     // rr_scheduler(c); // Use a xv6 default RR scheduler
     release(&ptable.lock);
 
