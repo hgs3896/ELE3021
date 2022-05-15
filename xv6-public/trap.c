@@ -8,6 +8,7 @@
 #include "traps.h"
 #include "spinlock.h"
 #include "schedulers.h"
+#include "lwp.h"
 
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
@@ -40,7 +41,7 @@ trap(struct trapframe *tf)
   if(tf->trapno == T_SYSCALL){
     if(myproc()->killed)
       exit();
-    myproc()->tf = tf;
+    current_lwp(myproc())->tf = tf;
     syscall();
     if(myproc()->killed)
       exit();

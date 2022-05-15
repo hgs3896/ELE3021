@@ -102,9 +102,10 @@ exec(char *path, char **argv)
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;
   curproc->sz = sz;
-  curproc->stack_sz = stack_sz;
-  curproc->tf->eip = elf.entry;  // main
-  curproc->tf->esp = sp;
+  curproc->lwps[0]->state = LWP_RUNNABLE;
+  curproc->lwps[0]->stack_sz = stack_sz;
+  curproc->lwps[0]->tf->eip = elf.entry;  // main
+  curproc->lwps[0]->tf->esp = sp;
   switchuvm(curproc);
   freevm(oldpgdir);
   return 0;

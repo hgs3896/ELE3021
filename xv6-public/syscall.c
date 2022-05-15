@@ -22,7 +22,7 @@ fetchint(uint addr, int *ip)
   // if(addr >= curproc->sz || addr+4 > curproc->sz)
   if(!(
     (addr < curproc->sz && addr + 4 <= curproc->sz) ||
-    (addr < USERTOP && addr >= USERTOP - curproc->stack_sz && addr + 4 > USERTOP - curproc->stack_sz)
+    (addr < stack_base(curproc) && addr >= stack_top(curproc) && addr + 4 > stack_top(curproc))
     ))
     return -1;
   *ip = *(int*)(addr);
@@ -39,10 +39,12 @@ fetchstr(uint addr, char **pp)
   struct proc *curproc = myproc();
 
   // if(addr >= curproc->sz)
-  if(!(addr < curproc->sz || addr >= USERTOP - curproc->stack_sz))
+  if(!(
+    (addr < curproc->sz) || (addr >= stack_top(curproc))
+    ))
     return -1;
   *pp = (char*)addr;
-  ep = (char*)USERTOP;
+  ep = (char*)stack_base(curproc);
   for(s = *pp; s < ep; s++){
     if(*s == 0)
       return s - *pp;
@@ -54,7 +56,7 @@ fetchstr(uint addr, char **pp)
 int
 argint(int n, int *ip)
 {
-  return fetchint((myproc()->tf->esp) + 4 + 4*n, ip);
+  return fetchint((current_lwp(myproc())->tf->esp) + 4 + 4*n, ip);
 }
 
 // Fetch the nth word-sized system call argument as a pointer
@@ -72,7 +74,7 @@ argptr(int n, char **pp, int size)
   if(!(size >= 0 && 
       (
         ((uint)i < curproc->sz && (uint)i + size <= curproc->sz) ||
-        ((uint)i < USERTOP && (uint)i + size > USERTOP - curproc->stack_sz && (uint)i >= USERTOP - curproc->stack_sz)
+        ((uint)i < stack_base(curproc) && (uint)i + size > stack_top(curproc) && (uint)i >= stack_top(curproc))
       )
     ))
     return -1;
@@ -118,6 +120,9 @@ extern int sys_getppid(void);
 extern int sys_yield(void);
 extern int sys_getlev(void);
 extern int sys_set_cpu_share(void);
+extern int sys_thread_create(void);
+extern int sys_thread_exit(void);
+extern int sys_thread_join(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]          sys_fork,
@@ -145,6 +150,9 @@ static int (*syscalls[])(void) = {
 [SYS_yield]         sys_yield,
 [SYS_getlev]        sys_getlev,
 [SYS_set_cpu_share] sys_set_cpu_share,
+[SYS_thread_create] sys_thread_create,
+[SYS_thread_exit]   sys_thread_exit,
+[SYS_thread_join]   sys_thread_join,
 };
 
 void
@@ -153,12 +161,12 @@ syscall(void)
   int num;
   struct proc *curproc = myproc();
 
-  num = curproc->tf->eax;
+  num = current_lwp(curproc)->tf->eax;
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    curproc->tf->eax = syscalls[num]();
+    current_lwp(curproc)->tf->eax = syscalls[num]();
   } else {
     cprintf("%d %s: unknown sys call %d\n",
             curproc->pid, curproc->name, num);
-    curproc->tf->eax = -1;
+    current_lwp(curproc)->tf->eax = -1;
   }
 }

@@ -45,3 +45,8 @@ int getlev(void);
 
 // impl_set_cpu_share.c
 int set_cpu_share(int);
+
+// lwp.c
+int thread_create(thread_t *, void *(*)(void *), void *);
+int thread_join(thread_t, void **);
+void thread_exit(void *);

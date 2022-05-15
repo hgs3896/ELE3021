@@ -1,11 +1,12 @@
-#include "types.h"
-
 #ifndef __LWP_H__
 #define __LWP_H__
-typedef uint thread_t;
-enum lwpstate { UNUSED = 0, SLEEPING = 2, RUNNABLE = 3, RUNNING = 4, ZOMBIE = 5 };
+
+#include "types.h"
+
+enum lwpstate { LWP_UNUSED = 0, LWP_EMBRYO = 1, LWP_SLEEPING = 2, LWP_RUNNABLE = 3, LWP_RUNNING = 4, LWP_ZOMBIE = 5 };
 struct lwp{
   thread_t tid;             // LWP Identifier
+  uint stack_sz;            // Size of stack memory (bytes)
   enum lwpstate state;      // LWP State
   char *kstack;             // Bottom of kernel stack for this lwp
   char *ustack;             // Top of user stack for this lwp
@@ -13,6 +14,10 @@ struct lwp{
   struct context *context;  // Pointer to its context
   void *chan;               // Channel to get sleep
 };
+
+struct lwp* alloclwp(void);
+void dealloclwp(struct lwp* unused);
+void swtchlwp(void);
 
 int
 thread_create(
@@ -31,5 +36,9 @@ void
 thread_exit(
     void *ret_val
 );
+
+int sys_thread_create(void);
+int sys_thread_exit(void);
+int sys_thread_join(void);
 
 #endif

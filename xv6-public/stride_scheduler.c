@@ -294,7 +294,7 @@ stride_scheduler(struct cpu *c)
     switchuvm(p);
     p->state = RUNNING;
 
-    swtch(&(c->scheduler), p->context);
+    swtch(&(c->scheduler), current_lwp(p)->context);
     switchkvm();
 
     // Process is done running for now.

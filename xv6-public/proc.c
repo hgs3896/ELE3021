@@ -75,6 +75,7 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
+  struct lwp *lwp;
   char *sp;
 
   acquire(&ptable.lock);
@@ -92,26 +93,29 @@ found:
 
   release(&ptable.lock);
 
+  p->lwp_idx = 0;
+  lwp = p->lwps[p->lwp_idx] = alloclwp();
+
   // Allocate kernel stack.
-  if((p->kstack = kalloc()) == 0){
+  if((lwp->kstack = kalloc()) == 0){
     p->state = UNUSED;
     return 0;
   }
-  sp = p->kstack + KSTACKSIZE;
+  sp = lwp->kstack + KSTACKSIZE;
 
   // Leave room for trap frame.
-  sp -= sizeof *p->tf;
-  p->tf = (struct trapframe*)sp;
+  sp -= sizeof *lwp->tf;
+  lwp->tf = (struct trapframe*)sp;
 
   // Set up new context to start executing at forkret,
   // which returns to trapret.
   sp -= 4;
   *(uint*)sp = (uint)trapret;
 
-  sp -= sizeof *p->context;
-  p->context = (struct context*)sp;
-  memset(p->context, 0, sizeof *p->context);
-  p->context->eip = (uint)forkret;
+  sp -= sizeof *lwp->context;
+  lwp->context = (struct context*)sp;
+  memset(lwp->context, 0, sizeof *lwp->context);
+  lwp->context->eip = (uint)forkret;
 
   return p;
 }
@@ -122,6 +126,7 @@ void
 userinit(void)
 {
   struct proc *p;
+  struct lwp* lwp;
   extern char _binary_initcode_start[], _binary_initcode_size[];
 
   p = allocproc();
@@ -131,15 +136,15 @@ userinit(void)
     panic("userinit: out of memory?");
   inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
   p->sz = PGSIZE;
-  p->stack_sz = 0;
-  memset(p->tf, 0, sizeof(*p->tf));
-  p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
-  p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
-  p->tf->es = p->tf->ds;
-  p->tf->ss = p->tf->ds;
-  p->tf->eflags = FL_IF;
-  p->tf->esp = PGSIZE;
-  p->tf->eip = 0;  // beginning of initcode.S
+  lwp = current_lwp(p);
+  memset(lwp->tf, 0, sizeof(*lwp->tf));
+  lwp->tf->cs = (SEG_UCODE << 3) | DPL_USER;
+  lwp->tf->ds = (SEG_UDATA << 3) | DPL_USER;
+  lwp->tf->es = lwp->tf->ds;
+  lwp->tf->ss = lwp->tf->ds;
+  lwp->tf->eflags = FL_IF;
+  lwp->tf->esp = PGSIZE;
+  lwp->tf->eip = 0;  // beginning of initcode.S
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
@@ -156,6 +161,7 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
+  lwp->state = LWP_RUNNABLE;
 
   release(&ptable.lock);
 }
@@ -169,8 +175,8 @@ growproc(int n)
   struct proc *curproc = myproc();
 
   sz = curproc->sz;
-  if(sz + n + PGSIZE >= USERTOP - curproc->stack_sz)
-    return -1;
+  // if(sz + n + PGSIZE >= USERTOP - curproc->stack_sz)
+  //   return -1;
   if(n > 0){
     if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
@@ -199,19 +205,28 @@ fork(void)
   }
 
   // Copy process state from proc.
-  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz, curproc->stack_sz)) == 0){
-    kfree(np->kstack);
-    np->kstack = 0;
+  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz, curproc->lwps)) == 0){
+    for(int i = 0; i < NLWPS; ++i)
+    {
+      if(np->lwps[i] && np->lwps[i]->state != LWP_UNUSED){
+        kfree(np->lwps[i]->kstack);
+        np->lwps[i]->kstack = 0;
+      }
+    }
     np->state = UNUSED;
     return -1;
   }
   np->sz = curproc->sz;
-  np->stack_sz = curproc->stack_sz;
   np->parent = curproc;
-  *np->tf = *curproc->tf;
+  for(int i = 0; i < NLWPS; ++i){
+    if(curproc->lwps[i] && curproc->lwps[i]->state != LWP_UNUSED){
+      np->lwps[i]->stack_sz = curproc->lwps[i]->stack_sz;
+      *np->lwps[i]->tf = *curproc->lwps[i]->tf;
 
-  // Clear %eax so that fork returns 0 in the child.
-  np->tf->eax = 0;
+      // Clear %eax so that fork returns 0 in the child.
+      np->lwps[i]->tf->eax = 0;
+    }
+  }
 
   for(i = 0; i < NOFILE; i++)
     if(curproc->ofile[i])
@@ -303,8 +318,13 @@ wait(void)
       if(p->state == ZOMBIE){
         // Found one.
         pid = p->pid;
-        kfree(p->kstack);
-        p->kstack = 0;
+        for(int i=0;i<NLWPS; ++i){ // Clean up the stacks of lwps
+          if(p->lwps[i] && p->lwps[i]->state != LWP_UNUSED){
+            kfree(p->lwps[i]->kstack);
+            p->lwps[i]->kstack = 0;
+            dealloclwp(p->lwps[i]);
+          }
+        }
         freevm(p->pgdir);
         p->pid = 0;
         p->parent = 0;
@@ -377,17 +397,18 @@ sched(void)
 {
   int intena;
   struct proc *p = myproc();
+  struct lwp *lwp = current_lwp(p);
 
   if(!holding(&ptable.lock))
     panic("sched ptable.lock");
   if(mycpu()->ncli != 1)
     panic("sched locks");
-  if(p->state == RUNNING)
+  if(lwp->state == LWP_RUNNING)
     panic("sched running");
   if(readeflags()&FL_IF)
     panic("sched interruptible");
   intena = mycpu()->intena;
-  swtch(&p->context, mycpu()->scheduler);
+  swtch(&lwp->context, mycpu()->scheduler);
   mycpu()->intena = intena;
 }
 
@@ -396,7 +417,9 @@ void
 yield(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
-  myproc()->state = RUNNABLE;
+  struct proc* p = myproc();
+  p->state = RUNNABLE;
+  current_lwp(p)->state = RUNNABLE;
   sched();
   release(&ptable.lock);
 }
@@ -439,9 +462,13 @@ void
 sleep(void *chan, struct spinlock *lk)
 {
   struct proc *p = myproc();
+  struct lwp *lwp = current_lwp(p);
   
   if(p == 0)
     panic("sleep");
+  
+  if(lwp == 0)
+    panic("sleep without running lwp");
 
   if(lk == 0)
     panic("sleep without lk");
@@ -457,13 +484,13 @@ sleep(void *chan, struct spinlock *lk)
     release(lk);
   }
   // Go to sleep.
-  p->chan = chan;
-  p->state = SLEEPING;
+  lwp->chan = chan;
+  lwp->state = LWP_SLEEPING;
 
   sched();
 
   // Tidy up.
-  p->chan = 0;
+  lwp->chan = 0;
 
   // Reacquire original lock.
   if(lk != &ptable.lock){  //DOC: sleeplock2
@@ -479,10 +506,14 @@ static void
 wakeup1(void *chan)
 {
   struct proc *p;
+  struct lwp** lwp;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->state == SLEEPING && p->chan == chan){
-      p->state = RUNNABLE;
+    for(lwp = p->lwps;lwp < &p->lwps[NLWPS]; ++lwp){
+      if((*lwp) && (*lwp)->state == LWP_SLEEPING && (*lwp)->chan == chan){
+        p->state = RUNNABLE;
+        (*lwp)->state = LWP_RUNNABLE;
+      }
     }
   }
 }
@@ -548,8 +579,8 @@ procdump(void)
     else
       state = "???";
     cprintf("%d %s %s", p->pid, state, p->name);
-    if(p->state == SLEEPING){
-      getcallerpcs((uint*)p->context->ebp+2, pc);
+    if(current_lwp(p)->state == LWP_SLEEPING){
+      getcallerpcs((uint*)current_lwp(p)->context->ebp+2, pc);
       for(i=0; i<10 && pc[i] != 0; i++)
         cprintf(" %p", pc[i]);
     }

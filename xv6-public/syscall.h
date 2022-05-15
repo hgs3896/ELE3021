@@ -24,3 +24,6 @@
 #define SYS_yield         23
 #define SYS_getlev        24
 #define SYS_set_cpu_share 25
+#define SYS_thread_create 26
+#define SYS_thread_exit   27
+#define SYS_thread_join   28

@@ -1,4 +1,7 @@
 #pragma once
+#include "lwp.h"
+#include "defs.h"
+
 // Per-CPU state
 struct cpu {
   uchar apicid;                // Local APIC ID
@@ -37,16 +40,16 @@ enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 // Per-process state
 struct proc {
-  uint sz;                     // Size of process memory (bytes)
-  uint stack_sz;                // Size of heap memory (bytes)
+  uint sz;                     // Size of process memory(including text, data/bss, heap) (bytes)
+  // uint stack_sz;               // Size of stack memory (bytes)
   pde_t* pgdir;                // Page table
-  char *kstack;                // Bottom of kernel stack for this process
+  // char *kstack;                // Bottom of kernel stack for this process
   enum procstate state;        // Process state
   int pid;                     // Process ID
   struct proc *parent;         // Parent process
-  struct trapframe *tf;        // Trap frame for current syscall
-  struct context *context;     // swtch() here to run process
-  void *chan;                  // If non-zero, sleeping on chan
+  // struct trapframe *tf;        // Trap frame for current syscall
+  // struct context *context;     // swtch() here to run process
+  // void *chan;                  // If non-zero, sleeping on chan
   int killed;                  // If non-zero, have been killed
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
@@ -54,7 +57,31 @@ struct proc {
   uint cticks;                 // Consumed tick count at the given level of the queue
   uint yield_by :  4;          // the process is yield by stride = 1, mlfq = 2
   uint lev      : 28;          // Level in MLFQ(0~NMLFQ), otherwise Stride Level
+  int lwp_idx;                 // Current LWP index
+  struct lwp *lwps[NLWPS];     // LWPs
 };
+
+inline struct lwp*
+current_lwp(const struct proc *p)
+{
+    return p->lwps[p->lwp_idx];
+}
+
+inline uint
+stack_base(const struct proc *p)
+{
+  if(current_lwp(p) == 0)
+    panic("Not available stack");
+  return USERTOP - p->lwp_idx * NLWPS * PGSIZE;
+}
+
+inline uint
+stack_top(const struct proc *p)
+{
+  if(current_lwp(p) == 0)
+    panic("Not available stack");
+  return USERTOP - p->lwp_idx * NLWPS * PGSIZE - current_lwp(p)->stack_sz;
+}
 
 // Process memory is laid out contiguously, low addresses first:
 //   text

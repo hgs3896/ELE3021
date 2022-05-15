@@ -158,7 +158,9 @@ switchuvm(struct proc *p)
 {
   if(p == 0)
     panic("switchuvm: no process");
-  if(p->kstack == 0)
+  if(current_lwp(p) == 0)
+    panic("switchuvm: no main lwp");
+  if(current_lwp(p)->kstack == 0)
     panic("switchuvm: no kstack");
   if(p->pgdir == 0)
     panic("switchuvm: no pgdir");
@@ -168,7 +170,7 @@ switchuvm(struct proc *p)
                                 sizeof(mycpu()->ts)-1, 0);
   mycpu()->gdt[SEG_TSS].s = 0;
   mycpu()->ts.ss0 = SEG_KDATA << 3;
-  mycpu()->ts.esp0 = (uint)p->kstack + KSTACKSIZE;
+  mycpu()->ts.esp0 = (uint)current_lwp(p)->kstack + KSTACKSIZE;
   // setting IOPL=0 in eflags *and* iomb beyond the tss segment limit
   // forbids I/O instructions (e.g., inb and outb) from user space
   mycpu()->ts.iomb = (ushort) 0xFFFF;
@@ -314,11 +316,11 @@ clearpteu(pde_t *pgdir, char *uva)
 // Given a parent process's page table, create a copy
 // of it for a child.
 pde_t*
-copyuvm(pde_t *pgdir, uint sz, uint stack_sz)
+copyuvm(pde_t *pgdir, uint sz, struct lwp **lwps)
 {
   pde_t *d;
   pte_t *pte;
-  uint pa, i, flags;
+  uint pa, l, i, flags;
   char *mem;
 
   if((d = setupkvm()) == 0)
@@ -338,19 +340,25 @@ copyuvm(pde_t *pgdir, uint sz, uint stack_sz)
       goto bad;
     }
   }
-  for(i = PGROUNDDOWN(USERTOP - stack_sz); i < USERTOP; i += PGSIZE){
-    if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
-      panic("copyuvm: pte should exist");
-    if(!(*pte & PTE_P))
-      panic("copyuvm: page not present");
-    pa = PTE_ADDR(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto bad;
-    memmove(mem, (char*)P2V(pa), PGSIZE);
-    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
-      kfree(mem);
-      goto bad;
+  for(l = 0; l < NLWPS; ++l) {
+    if(lwps[l] == 0 || lwps[l]->state == LWP_UNUSED)
+      continue;
+    uint stack_sz = lwps[l]->stack_sz;
+    uint stack_base = USERTOP - PGSIZE * NPAGESPERLWP * l;
+    for(i = PGROUNDDOWN(stack_base - stack_sz); i < stack_base; i += PGSIZE){
+      if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
+        panic("copyuvm: pte should exist");
+      if(!(*pte & PTE_P))
+        panic("copyuvm: page not present");
+      pa = PTE_ADDR(*pte);
+      flags = PTE_FLAGS(*pte);
+      if((mem = kalloc()) == 0)
+        goto bad;
+      memmove(mem, (char*)P2V(pa), PGSIZE);
+      if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
+        kfree(mem);
+        goto bad;
+      }
     }
   }
   return d;
