@@ -11,9 +11,9 @@
 
 #define NMLFQ 3
 #define DEBUG_BOOSTING 0
-static const uint MLFQ_BOOSTING_TICKS = 100;
-static const uint MLFQ_MAX_TICKS[NMLFQ] = {1, 2, 4};
-static const uint MLFQ_TIME_ALLOTS[NMLFQ] = {5, 10, 1 << 31};
+static const uint MLFQ_BOOSTING_TICKS = 200;
+static const uint MLFQ_MAX_TICKS[NMLFQ] = {5, 10, 20};
+static const uint MLFQ_TIME_ALLOTS[NMLFQ] = {20, 40, 1 << 31};
 
 typedef struct proc_queue mlfq_queue_t;
 extern uint mlfq_ticks;
