@@ -14,4 +14,4 @@
 #define NBUF         (MAXOPBLOCKS*3)  // size of disk block cache
 #define FSSIZE       1000  // size of file system in blocks
 #define USERTOP      0x7fffe000 // top of user stack
-#define NPAGESPERLWP 6 // maximum bumber of pages that a lwp can use
+#define NPAGESPERLWP 6 // maximum number of pages that a lwp can use
