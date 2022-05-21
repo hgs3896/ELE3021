@@ -158,9 +158,9 @@ switchuvm(struct proc *p)
 {
   if(p == 0)
     panic("switchuvm: no process");
-  if(current_lwp(p) == 0)
+  if(mylwp(myproc()) == 0)
     panic("switchuvm: no main lwp");
-  if(current_lwp(p)->kstack == 0)
+  if(mylwp(myproc())->kstack == 0)
     panic("switchuvm: no kstack");
   if(p->pgdir == 0)
     panic("switchuvm: no pgdir");
@@ -170,7 +170,7 @@ switchuvm(struct proc *p)
                                 sizeof(mycpu()->ts)-1, 0);
   mycpu()->gdt[SEG_TSS].s = 0;
   mycpu()->ts.ss0 = SEG_KDATA << 3;
-  mycpu()->ts.esp0 = (uint)current_lwp(p)->kstack + KSTACKSIZE;
+  mycpu()->ts.esp0 = (uint)mylwp(myproc())->kstack + KSTACKSIZE;
   // setting IOPL=0 in eflags *and* iomb beyond the tss segment limit
   // forbids I/O instructions (e.g., inb and outb) from user space
   mycpu()->ts.iomb = (ushort) 0xFFFF;

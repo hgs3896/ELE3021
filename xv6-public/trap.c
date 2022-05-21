@@ -41,7 +41,7 @@ trap(struct trapframe *tf)
   if(tf->trapno == T_SYSCALL){
     if(myproc()->killed)
       exit();
-    current_lwp(myproc())->tf = tf;
+    mylwp(myproc())->tf = tf;
     syscall();
     if(myproc()->killed)
       exit();

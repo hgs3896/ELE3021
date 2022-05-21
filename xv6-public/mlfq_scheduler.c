@@ -204,7 +204,7 @@ mlfq_scheduler(struct cpu *c)
     switchuvm(p);
     p->state = RUNNING;
 
-    swtch(&(c->scheduler), current_lwp(p)->context);
+    swtch(&(c->scheduler), mylwp(p)->context);
     switchkvm();
 
     if(is_mlfq(p)) {

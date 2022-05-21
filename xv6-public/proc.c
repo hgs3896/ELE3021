@@ -136,7 +136,7 @@ userinit(void)
     panic("userinit: out of memory?");
   inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
   p->sz = PGSIZE;
-  lwp = current_lwp(p);
+  lwp = mylwp(p);
   memset(lwp->tf, 0, sizeof(*lwp->tf));
   lwp->tf->cs = (SEG_UCODE << 3) | DPL_USER;
   lwp->tf->ds = (SEG_UDATA << 3) | DPL_USER;
@@ -397,7 +397,7 @@ sched(void)
 {
   int intena;
   struct proc *p = myproc();
-  struct lwp *lwp = current_lwp(p);
+  struct lwp *lwp = mylwp(p);
 
   if(!holding(&ptable.lock))
     panic("sched ptable.lock");
@@ -419,7 +419,7 @@ yield(void)
   acquire(&ptable.lock);  //DOC: yieldlock
   struct proc* p = myproc();
   p->state = RUNNABLE;
-  current_lwp(p)->state = RUNNABLE;
+  mylwp(p)->state = RUNNABLE;
   sched();
   release(&ptable.lock);
 }
@@ -462,7 +462,7 @@ void
 sleep(void *chan, struct spinlock *lk)
 {
   struct proc *p = myproc();
-  struct lwp *lwp = current_lwp(p);
+  struct lwp *lwp = mylwp(p);
   
   if(p == 0)
     panic("sleep");
@@ -579,8 +579,8 @@ procdump(void)
     else
       state = "???";
     cprintf("%d %s %s", p->pid, state, p->name);
-    if(current_lwp(p)->state == LWP_SLEEPING){
-      getcallerpcs((uint*)current_lwp(p)->context->ebp+2, pc);
+    if(mylwp(p)->state == LWP_SLEEPING){
+      getcallerpcs((uint*)mylwp(p)->context->ebp+2, pc);
       for(i=0; i<10 && pc[i] != 0; i++)
         cprintf(" %p", pc[i]);
     }

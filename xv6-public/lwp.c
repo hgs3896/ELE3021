@@ -70,7 +70,7 @@ thread_cleanup(void)
 {
   acquire(&ptable.lock);
 
-  struct lwp* lwp = current_lwp(myproc());
+  struct lwp* lwp = mylwp(myproc());
 
   lwp->state = ZOMBIE;
   // wakeup1((void*)t->tid);
@@ -103,7 +103,7 @@ thread_create(thread_t *thread, void *(*start_routine)(void *), void *arg)
   // Leave room for trap frame.
   sp -= sizeof *lwp->tf;
   lwp->tf = (struct trapframe*)sp;
-  *lwp->tf = *current_lwp(myproc())->tf;
+  *lwp->tf = *mylwp(myproc())->tf;
 
   // Set up new context to start executing at forkret,
   // which returns to trapret.
