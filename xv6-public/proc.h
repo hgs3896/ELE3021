@@ -59,6 +59,7 @@ struct proc {
   uint lev      : 28;          // Level in MLFQ(0~NMLFQ), otherwise Stride Level
   int lwp_idx;                 // Current LWP index
   struct lwp *lwps[NLWPS];     // LWPs
+  int lwp_cnt;                 // LWP counter
 };
 
 inline struct lwp**
