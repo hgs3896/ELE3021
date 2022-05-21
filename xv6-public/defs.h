@@ -200,3 +200,44 @@ int             set_cpu_share(int share);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
+// debugging print function for custom
+#define DEBUG_LEVEL_ALL    0
+#define DEBUG_LEVEL_TRACE  1
+#define DEBUG_LEVEL_DEBUG  2
+#define DEBUG_LEVEL_INFO   3
+#define DEBUG_LEVEL_WARN   4
+#define DEBUG_LEVEL_ERROR  5
+
+#define LOGGING            0
+#define LOG_LEVEL          DEBUG_LEVEL_ERROR
+
+#if LOGGING && LOG_LEVEL <= DEBUG_LEVEL_TRACE
+#define kprintf_trace(...) cprintf("[TRACE] " __VA_ARGS__)
+#else
+#define kprintf_trace(...)
+#endif
+
+#if LOGGING && LOG_LEVEL <= DEBUG_LEVEL_DEBUG
+#define kprintf_debug(...) cprintf("[DEBUG] " __VA_ARGS__)
+#else
+#define kprintf_debug(...)
+#endif
+
+#if LOGGING && LOG_LEVEL <= DEBUG_LEVEL_INFO
+#define kprintf_info(...) cprintf("[INFO] " __VA_ARGS__)
+#else
+#define kprintf_info(...)
+#endif
+
+#if LOGGING && LOG_LEVEL <= DEBUG_LEVEL_WARN
+#define kprintf_warn(...) cprintf("[WARN] " __VA_ARGS__)
+#else
+#define kprintf_warn(...)
+#endif
+
+#if LOGGING && LOG_LEVEL <= DEBUG_LEVEL_ERROR
+#define kprintf_error(...) cprintf("[ERROR] " __VA_ARGS__)
+#else
+#define kprintf_error(...)
+#endif
