@@ -63,9 +63,9 @@ exec(char *path, char **argv)
   // Allocate two pages at the next page boundary.
   // Make the first inaccessible.  Use the second as the user stack.
   uint stack_sz = 2 * PGSIZE;
-  if((allocuvm(pgdir, USERTOP - stack_sz, USERTOP)) == 0)
+  if((allocuvm(pgdir, PGROUNDDOWN(USERTOP - stack_sz), USERTOP)) == 0)
     goto bad;
-  clearpteu(pgdir, (char*)(USERTOP - stack_sz));
+  clearpteu(pgdir, (char*)PGROUNDDOWN(USERTOP - stack_sz));
   sp = USERTOP;
   // sz = PGROUNDUP(sz);
   // if((sz = allocuvm(pgdir, sz, sz + 2*PGSIZE)) == 0)
@@ -102,10 +102,12 @@ exec(char *path, char **argv)
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;
   curproc->sz = sz;
-  curproc->lwps[0]->state = LWP_RUNNABLE;
-  curproc->lwps[0]->stack_sz = stack_sz;
-  curproc->lwps[0]->tf->eip = elf.entry;  // main
-  curproc->lwps[0]->tf->esp = sp;
+  curproc->lwp_idx = 0;
+  curproc->lwp_cnt = 1;
+  curproc->lwps[curproc->lwp_idx]->state = LWP_RUNNABLE;
+  curproc->lwps[curproc->lwp_idx]->stack_sz = stack_sz;
+  curproc->lwps[curproc->lwp_idx]->tf->eip = elf.entry;  // main
+  curproc->lwps[curproc->lwp_idx]->tf->esp = sp;
   switchuvm(curproc);
   freevm(oldpgdir);
   return 0;
