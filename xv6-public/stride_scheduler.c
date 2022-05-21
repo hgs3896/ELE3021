@@ -249,17 +249,17 @@ stride_print(void)
 
   StrideItem *s;
   int i;
-  cprintf("Stride Info\n"
+  kprintf_info("Stride Info\n"
           "All Share = %d\n",
           stride_queue.all_share);
 
   for(i = 1; i <= stride_queue.q.size; i++) {
     s = &stride_queue.q.items[i];
     if(s->isMLFQ) {
-      cprintf("[%d] MLFQ (%d)\n", i, s->share);
+      kprintf_info("[%d] MLFQ (%d)\n", i, s->share);
       mlfq_print();
     } else {
-      cprintf("[%d] [%s] %s (%d)\n", i,
+      kprintf_info("[%d] [%s] %s (%d)\n", i,
               state2str[((struct proc *)s->proc)->state],
               ((struct proc *)s->proc)->name, s->share);
     }
