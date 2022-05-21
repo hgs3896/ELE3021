@@ -95,6 +95,7 @@ found:
 
   p->lwp_idx = 0;
   lwp = p->lwps[p->lwp_idx] = alloclwp();
+  lwp->tid = p->lwp_cnt++;
 
   // Allocate kernel stack.
   if((lwp->kstack = kalloc()) == 0){
@@ -319,10 +320,11 @@ wait(void)
         // Found one.
         pid = p->pid;
         for(int i=0;i<NLWPS; ++i){ // Clean up the stacks of lwps
-          if(p->lwps[i] && p->lwps[i]->state != LWP_UNUSED){
+          if(p->lwps[i]){
             kfree(p->lwps[i]->kstack);
             p->lwps[i]->kstack = 0;
             dealloclwp(p->lwps[i]);
+            p->lwps[i] = 0;
           }
         }
         freevm(p->pgdir);
@@ -331,6 +333,8 @@ wait(void)
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
+        p->lwp_idx = 0;
+        p->lwp_cnt = 0;
         release(&ptable.lock);
         return pid;
       }
@@ -466,7 +470,7 @@ sleep(void *chan, struct spinlock *lk)
   
   if(p == 0)
     panic("sleep");
-  
+
   if(lwp == 0)
     panic("sleep without running lwp");
 
@@ -491,7 +495,7 @@ sleep(void *chan, struct spinlock *lk)
 
   // Tidy up.
   lwp->chan = 0;
-
+  
   // Reacquire original lock.
   if(lk != &ptable.lock){  //DOC: sleeplock2
     release(&ptable.lock);
