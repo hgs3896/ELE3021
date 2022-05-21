@@ -75,19 +75,31 @@ mylwp(struct proc* p)
 }
 
 inline uint
-stack_base(const struct proc *p)
+stack_base_lwp(struct lwp **p_lwp)
 {
-  if(current_lwp(p) == 0)
-    panic("Not available stack");
-  return USERTOP - p->lwp_idx * NLWPS * PGSIZE;
+  if(p_lwp == 0)
+    panic("null pointer exception of lwp");
+  return USERTOP - (p_lwp - myproc()->lwps) * NPAGESPERLWP * PGSIZE;
 }
 
 inline uint
-stack_top(const struct proc *p)
+stack_top_lwp(struct lwp **p_lwp)
 {
-  if(current_lwp(p) == 0)
-    panic("Not available stack");
-  return USERTOP - p->lwp_idx * NLWPS * PGSIZE - current_lwp(p)->stack_sz;
+  uint base = stack_base_lwp(p_lwp);
+  return base - (*p_lwp)->stack_sz;
+}
+
+inline uint
+is_stack_addr(uint addr)
+{
+  struct proc* curproc = myproc();
+
+  for(struct lwp** p_lwp = curproc->lwps;p_lwp<&curproc->lwps[NLWPS];++p_lwp){
+    if(*p_lwp && addr < stack_base_lwp(p_lwp) && addr >= stack_top_lwp(p_lwp)){
+      return 1;
+    }
+  }
+  return 0;
 }
 
 // Process memory is laid out contiguously, low addresses first:

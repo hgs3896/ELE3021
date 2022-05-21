@@ -19,12 +19,9 @@ fetchint(uint addr, int *ip)
 {
   struct proc *curproc = myproc();
 
-  // if(addr >= curproc->sz || addr+4 > curproc->sz)
-  if(!(
-    (addr < curproc->sz && addr + 4 <= curproc->sz) ||
-    (addr < stack_base(curproc) && addr >= stack_top(curproc) && addr + 4 > stack_top(curproc))
-    ))
+  if(!((addr < curproc->sz && addr + 4 <= curproc->sz) || (is_stack_addr(addr) && is_stack_addr(addr+3)))){
     return -1;
+  }
   *ip = *(int*)(addr);
   return 0;
 }
@@ -38,13 +35,11 @@ fetchstr(uint addr, char **pp)
   char *s, *ep;
   struct proc *curproc = myproc();
 
-  // if(addr >= curproc->sz)
-  if(!(
-    (addr < curproc->sz) || (addr >= stack_top(curproc))
-    ))
+  if(!((addr < curproc->sz) || is_stack_addr(addr))) {
     return -1;
+  }
   *pp = (char*)addr;
-  ep = (char*)stack_base(curproc);
+  ep = (char*)stack_base_lwp(mylwp1(curproc));
   for(s = *pp; s < ep; s++){
     if(*s == 0)
       return s - *pp;
@@ -70,14 +65,15 @@ argptr(int n, char **pp, int size)
  
   if(argint(n, &i) < 0)
     return -1;
-  // if(size < 0 || (uint)i >= curproc->sz || (uint)i+size > curproc->sz)
   if(!(size >= 0 && 
       (
         ((uint)i < curproc->sz && (uint)i + size <= curproc->sz) ||
-        ((uint)i < stack_base(curproc) && (uint)i + size > stack_top(curproc) && (uint)i >= stack_top(curproc))
+        ((uint)is_stack_addr(i) && (uint)is_stack_addr(i + size - 1))
       )
     ))
+  {
     return -1;
+  }
   *pp = (char*)i;
   return 0;
 }
