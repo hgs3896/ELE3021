@@ -61,10 +61,16 @@ struct proc {
   struct lwp *lwps[NLWPS];     // LWPs
 };
 
-inline struct lwp*
-current_lwp(const struct proc *p)
+inline struct lwp**
+mylwp1(struct proc* p)
 {
-    return p->lwps[p->lwp_idx];
+  return &p->lwps[p->lwp_idx];
+}
+
+inline struct lwp*
+mylwp(struct proc* p)
+{
+  return *mylwp1(p);
 }
 
 inline uint
