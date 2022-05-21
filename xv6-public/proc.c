@@ -423,7 +423,7 @@ yield(void)
   acquire(&ptable.lock);  //DOC: yieldlock
   struct proc* p = myproc();
   p->state = RUNNABLE;
-  mylwp(p)->state = RUNNABLE;
+  mylwp(p)->state = LWP_RUNNABLE;
   sched();
   release(&ptable.lock);
 }
