@@ -466,13 +466,9 @@ void
 sleep(void *chan, struct spinlock *lk)
 {
   struct proc *p = myproc();
-  struct lwp *lwp = mylwp(p);
   
   if(p == 0)
     panic("sleep");
-
-  if(lwp == 0)
-    panic("sleep without running lwp");
 
   if(lk == 0)
     panic("sleep without lk");
@@ -487,15 +483,10 @@ sleep(void *chan, struct spinlock *lk)
     acquire(&ptable.lock);  //DOC: sleeplock1
     release(lk);
   }
-  // Go to sleep.
-  lwp->chan = chan;
-  lwp->state = LWP_SLEEPING;
 
-  sched();
+  // Sleep the current lwp
+  thread_sleep(chan, &ptable.lock);
 
-  // Tidy up.
-  lwp->chan = 0;
-  
   // Reacquire original lock.
   if(lk != &ptable.lock){  //DOC: sleeplock2
     release(&ptable.lock);
