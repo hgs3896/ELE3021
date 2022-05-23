@@ -104,7 +104,6 @@ exec(char *path, char **argv)
   curproc->sz = sz;
   curproc->lwp_idx = 0;
   curproc->lwp_cnt = 1;
-  curproc->lwps[curproc->lwp_idx]->state = LWP_RUNNABLE;
   curproc->lwps[curproc->lwp_idx]->stack_sz = stack_sz;
   curproc->lwps[curproc->lwp_idx]->tf->eip = elf.entry;  // main
   curproc->lwps[curproc->lwp_idx]->tf->esp = sp;
