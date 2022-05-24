@@ -341,10 +341,10 @@ copyuvm(pde_t *pgdir, uint sz, struct lwp **lwps)
     }
   }
   for(l = 0; l < NLWPS; ++l) {
-    if(lwps[l] == 0 || lwps[l]->state == LWP_UNUSED)
+    if(lwps[l] == 0)
       continue;
     uint stack_sz = lwps[l]->stack_sz;
-    uint stack_base = USERTOP - PGSIZE * NPAGESPERLWP * l;
+    uint stack_base = stack_base_lwp(&lwps[l]);
     for(i = PGROUNDDOWN(stack_base - stack_sz); i < stack_base; i += PGSIZE){
       if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
         panic("copyuvm: pte should exist");
