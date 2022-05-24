@@ -29,6 +29,8 @@ exec(char *path, char **argv)
   ilock(ip);
   pgdir = 0;
 
+  acquiresleep(&curproc->lock);
+
   // Check ELF header
   if(readi(ip, (char*)&elf, 0, sizeof(elf)) != sizeof(elf))
     goto bad;
@@ -67,11 +69,6 @@ exec(char *path, char **argv)
     goto bad;
   clearpteu(pgdir, (char*)PGROUNDDOWN(USERTOP - stack_sz));
   sp = USERTOP;
-  // sz = PGROUNDUP(sz);
-  // if((sz = allocuvm(pgdir, sz, sz + 2*PGSIZE)) == 0)
-  //   goto bad;
-  // clearpteu(pgdir, (char*)(sz - 2*PGSIZE));
-  // sp = sz;
 
   // Push argument strings, prepare rest of stack in ustack.
   for(argc = 0; argv[argc]; argc++) {
@@ -98,17 +95,34 @@ exec(char *path, char **argv)
       last = s+1;
   safestrcpy(curproc->name, last, sizeof(curproc->name));
 
+  // Set the current lwp as the main lwp
+  struct lwp* temp = curproc->lwps[curproc->lwp_idx];
+  curproc->lwps[curproc->lwp_idx] = curproc->lwps[0];
+  curproc->lwps[0] = temp;
+  curproc->lwp_idx = 0;
+
+  // Remove other lwps
+  for(int i = 1;i < NLWPS; ++i){
+    if(curproc->lwps[i]){
+      kfree(curproc->lwps[i]->kstack);
+      dealloclwp(curproc->lwps[i]);
+      curproc->lwps[i] = 0;
+    }
+  }
+
   // Commit to the user image.
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;
   curproc->sz = sz;
   curproc->lwp_idx = 0;
   curproc->lwp_cnt = 1;
-  curproc->lwps[curproc->lwp_idx]->stack_sz = stack_sz;
-  curproc->lwps[curproc->lwp_idx]->tf->eip = elf.entry;  // main
-  curproc->lwps[curproc->lwp_idx]->tf->esp = sp;
+  mylwp(curproc)->stack_sz = stack_sz;
+  mylwp(curproc)->tf->eip = elf.entry;  // main
+  mylwp(curproc)->tf->esp = sp;
+
   switchuvm(curproc);
   freevm(oldpgdir);
+  releasesleep(&curproc->lock);
   return 0;
 
  bad:
@@ -118,5 +132,6 @@ exec(char *path, char **argv)
     iunlockput(ip);
     end_op();
   }
+  releasesleep(&curproc->lock);
   return -1;
 }
