@@ -160,14 +160,14 @@ mlfq_print(void)
   static const char *state2str[] = {
       [UNUSED] "unused",   [EMBRYO] "embryo",  [SLEEPING] "sleep ",
       [RUNNABLE] "runble", [RUNNING] "run   ", [ZOMBIE] "zombie"};
-  kprintf_info("MLFQ Queue Info\n");
+  cprintf("MLFQ Queue Info\n");
   for(lev = 0; lev < NMLFQ; lev++) {
-    kprintf_info("Level %d (%d)\n", lev, queue_size(&mlfq[lev]));
-    kprintf_info("f=%d, r=%d\n", mlfq[lev].f, mlfq[lev].r);
+    cprintf("Level %d (%d)\n", lev, queue_size(&mlfq[lev]));
+    cprintf("f=%d, r=%d\n", mlfq[lev].f, mlfq[lev].r);
     for(idx = BEGIN(&mlfq[lev]); idx != END(&mlfq[lev]); idx = NEXT(idx))
-      kprintf_info("[%d] %s %s\n", idx, state2str[mlfq[lev].items[idx]->state],
+      cprintf("[%d] %s %s\n", idx, state2str[mlfq[lev].items[idx]->state],
                    mlfq[lev].items[idx]->name);
-    kprintf_info("\n");
+    cprintf("\n");
   }
 }
 
@@ -221,7 +221,7 @@ mlfq_scheduler(struct cpu *c)
 
       if(mlfq_need_boosting()) {
 #if DEBUG_BOOSTING
-        kprintf_trace("Priority Boosting Occurs\n");
+        cprintf("Priority Boosting Occurs\n");
 #endif
         mlfq_boost_priority();
       }
