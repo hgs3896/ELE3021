@@ -293,7 +293,6 @@ void
 exit(void)
 {
   struct proc *curproc = myproc();
-  struct lwp *lwp = mylwp(curproc);
   struct proc *p;
   int fd;
 
