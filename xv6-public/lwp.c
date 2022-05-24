@@ -22,6 +22,7 @@ static void thread_init(void);
 static void switchlwpkm(struct lwp *lwp);
 static struct lwp ** find_empty_lwp(void);
 static void wakeup1(void *chan);
+static int all_lwp(struct lwp** lwps, enum lwpstate s);
 
 // Wrapper for thread_create
 int
@@ -57,7 +58,7 @@ sys_thread_join(void)
 {
   thread_t thread;
   void **ret_val;
-  if(argint(0, &thread) < 0)
+  if(argint(0, (int*)&thread) < 0)
     return -1;
   if(argptr(1, (char **)&ret_val, 4) < 0)
     return -1;
@@ -71,18 +72,19 @@ thread_create(thread_t *thread, void *(*start_routine)(void *), void *arg)
   struct lwp *lwp;
   uint sp;
 
-  // lwp 할당
+  // 1. Allocate a LWP control block
   lwp = alloclwp();
   if(lwp == 0)
     return -1;
-
-  // lwp 구조체 채우기
 
   // Allocate kernel stack.
   if((lwp->kstack = kalloc()) == 0) {
     dealloclwp(lwp);
     return -1;
   }
+
+  // Fill the kernel stack
+
   // Initialize the kernel stack pointer
   sp = (uint)lwp->kstack + KSTACKSIZE;
 
@@ -119,20 +121,20 @@ thread_create(thread_t *thread, void *(*start_routine)(void *), void *arg)
   if((allocuvm(pgdir, stack_base - stack_sz, stack_base)) == 0)
     goto bad;
   clearpteu(pgdir, (char *)(stack_base - stack_sz));
-  lwp->stack_sz = stack_base - stack_sz;
+  lwp->stack_sz = stack_sz;
 
   sp = stack_base;
 
   uint ustack[] = {
-      (uint)0xfffffff0,
-      (uint)arg,
+    (uint)0xfffffff0,
+    (uint)arg,
   };
 
+  // Copy the contents of temporary user stack into the page table used in the current process
   sp -= sizeof ustack;
   if(copyout(pgdir, sp, ustack, sizeof ustack) < 0)
     goto bad;
 
-  curproc->pgdir = pgdir;
   // Update the page table
   switchuvm(curproc);
 
@@ -176,14 +178,12 @@ thread_join(thread_t thread, void **ret_val)
         uint stack_sz = 2 * PGSIZE;
         uint stack_base = stack_base_lwp(p_lwp);
 
-        kprintf_debug("thread_join %d\n", (*p_lwp)->tid);
-
+        // Copy the return value
         *ret_val = (*p_lwp)->ret_val;
 
         // 유저 스택 메모리 해제
-        if((deallocuvm(curproc->pgdir, stack_base, stack_base - stack_sz)) ==
-           0) {
-          panic("not avail to dealloc");
+        if((deallocuvm(curproc->pgdir, stack_base, stack_base - stack_sz)) == 0) {
+          panic("cannot dealloc user stacks");
         }
 
         // 커널 스택 메모리 해제
@@ -199,21 +199,23 @@ thread_join(thread_t thread, void **ret_val)
         *p_lwp = 0;
 
         release(&ptable.lock);
+        kprintf_info("thread join pid = %d, tid = %d\n", curproc->pid, thread);
         return 0;
       }
     }
 
     // No point waiting if we don't have any children.
     if(!found || curproc->killed) {
+      kprintf_info("Fail to join\n");
       release(&ptable.lock);
       return -1;
     }
 
     // Wait for children to exit.  (See wakeup1 call in proc_exit.)
-    int my_tid = mylwp(curproc)->tid;
-    thread_sleep((void *)(my_tid), &ptable.lock); // DOC: wait-sleep
+    sleep((void *)(mylwp(curproc)->tid), &ptable.lock); // DOC: wait-sleep
   }
 
+  kprintf_error("bad lwp\n");
   return 0;
 }
 
@@ -221,74 +223,47 @@ void
 thread_exit(void *ret_val)
 {
   struct proc *curproc = myproc();
-  struct lwp *lwp = mylwp(curproc);
+  struct lwp **p_lwp, *curlwp = mylwp(curproc);
 
   // Save the return value
-  lwp->ret_val = ret_val;
+  curlwp->ret_val = ret_val;
 
   acquire(&ptable.lock);
 
-  // Parent might be sleeping in wait().
-  wakeup1((void *)lwp->ptid);
+  while(1){
+    // Parent lwp might be sleeping in thread_join().
+    wakeup1((void *)curlwp->ptid);
 
-  // Wakeup child lwps
+    // Pass abandoned children to main lwp.
+    for(p_lwp = curproc->lwps; p_lwp < &curproc->lwps[NLWPS]; p_lwp++){
+      if((*p_lwp) && (*p_lwp)->ptid == curlwp->tid){
+        (*p_lwp)->ptid = 0;
+        if((*p_lwp)->state == LWP_ZOMBIE)
+          wakeup1(0);
+      }
+    }
 
-  // Jump into the scheduler, never to return.
-  lwp->state = LWP_ZOMBIE;
+    // If every lwp is ZOMBIE, then exit the whole process
+    if(all_lwp(curproc->lwps, LWP_ZOMBIE)){
+      exit();
+    }
 
-  kprintf_debug("thread_exit %d\n", lwp->tid);
-  swtchlwp1(get_runnable_lwp(curproc));
-  panic("zombie thread exit");
-}
+    // Jump into the scheduler, never to return.
+    curlwp->state = LWP_ZOMBIE;
 
-// Atomically release lock and sleep on chan.
-// Reacquires lock when awakened.
-void
-thread_sleep(void *chan, struct spinlock *lk)
-{
-  struct proc *p = myproc();
-  struct lwp *lwp = mylwp(p);
+    kprintf_info("thread_exit at pid = %d, tid = %d\n", curproc->pid, curlwp->tid);
 
-  if(p == 0)
-    panic("sleep");
-
-  if(lwp == 0)
-    panic("sleep without running lwp");
-
-  if(lk == 0)
-    panic("sleep without lk");
-
-  // Must acquire ptable.lock in order to
-  // change p->state and then call sched.
-  // Once we hold ptable.lock, we can be
-  // guaranteed that we won't miss any wakeup
-  // (wakeup runs with ptable.lock locked),
-  // so it's okay to release lk.
-  if(lk != &ptable.lock) { // DOC: sleeplock0
-    acquire(&ptable.lock); // DOC: sleeplock1
-    release(lk);
+    struct lwp **p_next_lwp = get_runnable_lwp(curproc);
+    if(p_next_lwp != 0 && p_next_lwp != mylwp1(curproc)) {
+      // If another lwp is runnable, switch to another lwp.
+      swtchlwp1(p_next_lwp);
+    } else {
+      // Otherwise, switch to the kernel scheduler.
+      curproc->state = SLEEPING;
+      sched();
+    }
   }
-
-  // Go to sleep.
-  lwp->chan = chan;
-  lwp->state = LWP_SLEEPING;
-
-  struct lwp **p_next_lwp = get_runnable_lwp(p);
-  if(p_next_lwp != 0)
-    swtchlwp1(p_next_lwp);
-  else {
-    p->state = SLEEPING;
-    sched();
-  }
-
-  // Tidy up.
-  lwp->chan = 0;
-
-  // Reacquire original lock.
-  if(lk != &ptable.lock) { // DOC: sleeplock2
-    release(&ptable.lock);
-    acquire(lk);
-  }
+  panic("zombie thread exit"); // Never returns
 }
 
 struct lwp *
@@ -341,10 +316,15 @@ swtchlwp1(struct lwp **p_lwp)
     return;
 
   curproc->lwp_idx = p_lwp - curproc->lwps;
-  if(curproc->lwp_idx >= NLWPS || curproc->lwp_idx < 0)
+  if(curproc->lwp_idx >= NLWPS || curproc->lwp_idx < 0){
     panic("Bad lwp idx");
+  }
 
   switchlwpkm(*p_lwp);
+
+  kprintf_trace("[before] pid %d switch stack from %d(%d) to %d(%d)\n", curproc->pid, curlwp->tid, curlwp->state, (*p_lwp)->tid, (*p_lwp)->state);
+  (*p_lwp)->state = LWP_RUNNING;
+  kprintf_trace("[ after] pid %d switch stack from %d(%d) to %d(%d)\n", curproc->pid, curlwp->tid, curlwp->state, (*p_lwp)->tid, (*p_lwp)->state);
 
   int intena = mycpu()->intena;
   swtch(&curlwp->context, (*p_lwp)->context);
@@ -365,7 +345,7 @@ get_runnable_lwp(struct proc *p)
   }
   if(p->lwps[lwp_idx]->kstack == 0)
     panic("empty kernel stack");
-  if(p->lwp_idx == lwp_idx)
+  if(p->lwps[lwp_idx]->state != LWP_RUNNABLE)
     return 0;
   return &p->lwps[lwp_idx];
 }
@@ -380,11 +360,26 @@ print_lwps(const struct proc *p)
       [LWP_UNUSED] "unused",   [LWP_EMBRYO] "embryo",  [LWP_SLEEPING] "sleep ",
       [LWP_RUNNABLE] "runble", [LWP_RUNNING] "run   ", [LWP_ZOMBIE] "zombie"};
 
-  for(int i = 0; i < p->lwp_cnt; ++i) {
+  for(int i = 0; i < NLWPS; ++i) {
     if(p->lwps[i] == 0)
       continue;
-    cprintf("[%d] %s\n", i, states[p->lwps[i]->state]);
+    if(i == p->lwp_idx)
+      cprintf("*");
+    cprintf("[%d] %s 0x%x\n", i, states[p->lwps[i]->state], p->lwps[i]->chan);
   }
+}
+
+int
+copy_lwp(struct lwp *dst, const struct lwp *src)
+{
+  dst->tid = src->tid;
+  dst->ptid = src->ptid;
+  dst->stack_sz = src->stack_sz;
+  dst->state = src->state;
+  *dst->tf = *src->tf;
+  dst->chan = src->chan;
+  dst->ret_val = src->ret_val;
+  return 0;
 }
 
 // Switch TSS to correspond to light-weight process p.
@@ -419,6 +414,9 @@ find_empty_lwp(void)
   return 0;
 }
 
+/*
+ * this wakeup1 only wakes up the lwps up the current process
+ */
 static void
 wakeup1(void *chan)
 {
@@ -426,7 +424,8 @@ wakeup1(void *chan)
   struct lwp **p_lwp;
   for(p_lwp = p->lwps; p_lwp < &p->lwps[NLWPS]; ++p_lwp) {
     if((*p_lwp) && (*p_lwp)->state == LWP_SLEEPING && (*p_lwp)->chan == chan) {
-      p->state = RUNNABLE;
+      if(p->state == SLEEPING)
+        p->state = RUNNABLE;
       (*p_lwp)->state = LWP_RUNNABLE;
     }
   }
@@ -437,6 +436,17 @@ thread_init(void)
 {
   kprintf_debug("Thread init\n");
   release(&ptable.lock);
+}
+
+static int
+all_lwp(struct lwp** lwps, enum lwpstate s)
+{
+  for(struct lwp** p_lwps = lwps; p_lwps < &lwps[NLWPS]; ++p_lwps){
+    if(*p_lwps && (*p_lwps)->state != s){
+      return 0;
+    }
+  }
+  return 1;
 }
 
 // static void

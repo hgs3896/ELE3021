@@ -61,15 +61,6 @@ int thread_join(thread_t thread, void **ret_val);
 void thread_exit(void *ret_val);
 
 /*
- * void thread_sleep(
- *   void *chan,         // chan to fall a sleep
- *   struct spinlock *lk // a spinlock to hold when get awake
- * )
- * 
- */
-void thread_sleep(void *chan, struct spinlock *lk);
-
-/*
  * struct lwp* alloclwp()
  * returns a pointer to an allocated lwp struct otherwise -1
  */
@@ -105,5 +96,11 @@ struct lwp **get_runnable_lwp(struct proc *p);
  * print all available lwps in the given process(p)
  */
 void print_lwps(const struct proc *p);
+
+/*
+ * int copy_lwp(struct lwp *dst, const struct lwp *src)
+ * copy all contents of src lwp to those of dst lwp
+ */
+int copy_lwp(struct lwp *dst, const struct lwp *src);
 
 #endif

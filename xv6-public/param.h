@@ -15,4 +15,4 @@
 #define FSSIZE       1000  // size of file system in blocks
 #define USERTOP      0x7fffe000 // top of user stack
 #define NPAGESPERLWP 6 // maximum number of pages that a lwp can use
-#define MAX_LWPS (NCPU * NLWPS) // maximum number of lwps in a system
+#define MAX_LWPS (NLWPS * NLWPS) // maximum number of lwps in a system

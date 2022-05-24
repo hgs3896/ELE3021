@@ -1,6 +1,7 @@
 #pragma once
 #include "lwp.h"
 #include "defs.h"
+#include "sleeplock.h"
 
 // Per-CPU state
 struct cpu {
@@ -41,15 +42,10 @@ enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 // Per-process state
 struct proc {
   uint sz;                     // Size of process memory(including text, data/bss, heap) (bytes)
-  // uint stack_sz;               // Size of stack memory (bytes)
   pde_t* pgdir;                // Page table
-  // char *kstack;                // Bottom of kernel stack for this process
   enum procstate state;        // Process state
   int pid;                     // Process ID
   struct proc *parent;         // Parent process
-  // struct trapframe *tf;        // Trap frame for current syscall
-  // struct context *context;     // swtch() here to run process
-  // void *chan;                  // If non-zero, sleeping on chan
   int killed;                  // If non-zero, have been killed
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
@@ -60,6 +56,7 @@ struct proc {
   int lwp_idx;                 // Current LWP index
   struct lwp *lwps[NLWPS];     // LWPs
   int lwp_cnt;                 // LWP counter
+  struct sleeplock lock;       // Lock object for exec
 };
 
 inline struct lwp**

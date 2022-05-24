@@ -110,6 +110,13 @@ trap(struct trapframe *tf)
        (is_mlfq(myproc()) && mlfq_has_to_yield(myproc()))) {
       yield();
     }
+
+    // Find another runnable lwp except the current lwp
+    struct lwp** next_lwp = get_runnable_lwp(myproc());
+    if(next_lwp != 0 && next_lwp != mylwp1(myproc())){
+      mylwp(myproc())->state = LWP_RUNNABLE;
+      swtchlwp(next_lwp);
+    }
   }
 
   // Check if the process has been killed since we yielded

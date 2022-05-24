@@ -93,6 +93,8 @@ found:
 
   release(&ptable.lock);
 
+  initsleeplock(&p->lock, 0);
+
   p->lwp_idx = 0;
   lwp = p->lwps[p->lwp_idx] = alloclwp();
   lwp->tid = p->lwp_cnt++;
@@ -175,9 +177,8 @@ growproc(int n)
   uint sz;
   struct proc *curproc = myproc();
 
+  acquire(&ptable.lock);
   sz = curproc->sz;
-  // if(sz + n + PGSIZE >= USERTOP - curproc->stack_sz)
-  //   return -1;
   if(n > 0){
     if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
@@ -187,6 +188,7 @@ growproc(int n)
   }
   curproc->sz = sz;
   switchuvm(curproc);
+  release(&ptable.lock);
   return 0;
 }
 
@@ -200,38 +202,67 @@ fork(void)
   struct proc *np;
   struct proc *curproc = myproc();
 
+  acquiresleep(&curproc->lock);
+
   // Allocate process.
   if((np = allocproc()) == 0){
+    kprintf_info("Fail to fork bcuz fail to alloc proc\n");
+    releasesleep(&curproc->lock);
     return -1;
+  }
+  
+  // Copy main lwp content
+  copy_lwp(np->lwps[0], curproc->lwps[0]);
+
+  for(int i = 1; i < NLWPS; ++i){
+    if(curproc->lwps[i]){
+      if(np->lwps[i] == 0){
+        if((np->lwps[i] = alloclwp()) == 0){
+          panic("cannot allocate lwp");
+        }
+        if((np->lwps[i]->kstack = kalloc()) == 0){
+          panic("cannot allocate kstack");
+        }
+      }
+
+      // Copy lwp content
+      copy_lwp(np->lwps[i], curproc->lwps[i]);
+    }
   }
 
   // Copy process state from proc.
   if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz, curproc->lwps)) == 0){
+    // Remove Stacks
     for(int i = 0; i < NLWPS; ++i)
     {
-      if(np->lwps[i] && np->lwps[i]->state != LWP_UNUSED){
+      if(np->lwps[i]){
         kfree(np->lwps[i]->kstack);
-        np->lwps[i]->kstack = 0;
+        dealloclwp(np->lwps[i]);
+        np->lwps[i] = 0;
       }
     }
+    
+    // Remove Code + Data/BSS + Heap
+    deallocuvm(curproc->pgdir, curproc->sz, 0);
     np->state = UNUSED;
+
+    kprintf_info("Fail to fork bcuz fail to copy uvm\n");
+    releasesleep(&curproc->lock);
     return -1;
   }
+
   np->sz = curproc->sz;
   np->parent = curproc;
-  for(int i = 0; i < NLWPS; ++i){
-    if(curproc->lwps[i] && curproc->lwps[i]->state != LWP_UNUSED){
-      np->lwps[i]->stack_sz = curproc->lwps[i]->stack_sz;
-      *np->lwps[i]->tf = *curproc->lwps[i]->tf;
 
-      // Clear %eax so that fork returns 0 in the child.
-      np->lwps[i]->tf->eax = 0;
-    }
-  }
+  // Clear %eax so that fork returns 0 in the child.
+  np->lwps[curproc->lwp_idx]->tf->eax = 0;
 
+  // Copy file descripters
   for(i = 0; i < NOFILE; i++)
     if(curproc->ofile[i])
       np->ofile[i] = filedup(curproc->ofile[i]);
+  
+  // Copy current working directory
   np->cwd = idup(curproc->cwd);
 
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
@@ -243,12 +274,15 @@ fork(void)
   // By default, push it to MLFQ
   mlfq_push(np);
 
+  kprintf_info("fork() %d\n", pid);
+  releasesleep(&curproc->lock);
+
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
+  mylwp(np)->state = LWP_RUNNABLE;
 
   release(&ptable.lock);
-
   return pid;
 }
 
@@ -259,6 +293,7 @@ void
 exit(void)
 {
   struct proc *curproc = myproc();
+  struct lwp *lwp = mylwp(curproc);
   struct proc *p;
   int fd;
 
@@ -294,6 +329,11 @@ exit(void)
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
+  for(struct lwp** p_lwp = curproc->lwps; p_lwp < &curproc->lwps[NLWPS]; ++p_lwp){
+    if(*p_lwp){
+      (*p_lwp)->state = LWP_ZOMBIE;
+    }
+  }
   
   sched();
   panic("zombie exit");
@@ -308,6 +348,8 @@ wait(void)
   int havekids, pid;
   struct proc *curproc = myproc();
   
+  acquiresleep(&curproc->lock);
+  kprintf_info("wait()\n");
   acquire(&ptable.lock);
   for(;;){
     // Scan through table looking for exited children.
@@ -315,8 +357,10 @@ wait(void)
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->parent != curproc)
         continue;
+      
       havekids = 1;
       if(p->state == ZOMBIE){
+        kprintf_info("In process[%d] make a process zombie\n", p->pid);
         // Found one.
         pid = p->pid;
         for(int i=0;i<NLWPS; ++i){ // Clean up the stacks of lwps
@@ -336,6 +380,8 @@ wait(void)
         p->lwp_idx = 0;
         p->lwp_cnt = 0;
         release(&ptable.lock);
+        // kprintf_info("return wait()\n");
+        releasesleep(&curproc->lock);
         return pid;
       }
     }
@@ -343,9 +389,12 @@ wait(void)
     // No point waiting if we don't have any children.
     if(!havekids || curproc->killed){
       release(&ptable.lock);
+      kprintf_info("wait() but killed\n");
+      releasesleep(&curproc->lock);
       return -1;
     }
 
+    kprintf_info("wait() has no kids, so get asleep\n");
     // Wait for children to exit.  (See wakeup1 call in proc_exit.)
     sleep(curproc, &ptable.lock);  //DOC: wait-sleep
   }
@@ -433,8 +482,10 @@ void
 yield1(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
-  myproc()->cticks += 1;  // for preventing to game the scheduler
-  myproc()->state = RUNNABLE;
+  struct proc* p = myproc();
+  p->cticks += 1;  // for preventing to game the scheduler
+  p->state = RUNNABLE;
+  mylwp(p)->state = LWP_RUNNABLE;
   sched();
   release(&ptable.lock);
 }
@@ -466,9 +517,13 @@ void
 sleep(void *chan, struct spinlock *lk)
 {
   struct proc *p = myproc();
-  
+  struct lwp *lwp = mylwp(p);
+
   if(p == 0)
     panic("sleep");
+
+  if(lwp == 0)
+    panic("sleep without running lwp");
 
   if(lk == 0)
     panic("sleep without lk");
@@ -485,7 +540,26 @@ sleep(void *chan, struct spinlock *lk)
   }
 
   // Sleep the current lwp
-  thread_sleep(chan, &ptable.lock);
+  // Go to sleep.
+  lwp->chan = chan;
+  lwp->state = LWP_SLEEPING;
+
+  struct lwp **p_next_lwp = get_runnable_lwp(p);
+  if(p_next_lwp != 0 && p_next_lwp != mylwp1(p)) {
+    // If another lwp is runnable, switch to antoher lwp.
+    kprintf_info("switch to next runnable lwp\n");
+    swtchlwp1(p_next_lwp);
+  } else {
+    // Otherwise, swith to the kernel scheduler.
+    kprintf_info("switch to kscheduler\n");
+    
+    p->state = SLEEPING;
+    sched();
+    kprintf_info("switched back from kscheduler\n");
+  }
+
+  // Tidy up.
+  lwp->chan = 0;
 
   // Reacquire original lock.
   if(lk != &ptable.lock){  //DOC: sleeplock2
@@ -504,9 +578,11 @@ wakeup1(void *chan)
   struct lwp** lwp;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    for(lwp = p->lwps;lwp < &p->lwps[NLWPS]; ++lwp){
+    for(lwp = p->lwps; lwp < &p->lwps[NLWPS]; ++lwp){
       if((*lwp) && (*lwp)->state == LWP_SLEEPING && (*lwp)->chan == chan){
-        p->state = RUNNABLE;
+        if(p->state == SLEEPING){
+          p->state = RUNNABLE;
+        }
         (*lwp)->state = LWP_RUNNABLE;
       }
     }
