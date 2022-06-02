@@ -35,6 +35,7 @@ OBJS = \
 	stride_scheduler.o\
 	impl_set_cpu_share.o\
 	lwp.o\
+	semapore.o\
 
 # Cross-compiling (e.g., on Mac OS X)
 ifeq ($(shell uname), Darwin)
