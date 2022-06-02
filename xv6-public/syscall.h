@@ -27,3 +27,6 @@
 #define SYS_thread_create 26
 #define SYS_thread_exit   27
 #define SYS_thread_join   28
+#define SYS_xem_init      29
+#define SYS_xem_wait      30
+#define SYS_xem_unlock    31

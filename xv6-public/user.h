@@ -50,3 +50,8 @@ int set_cpu_share(int);
 int thread_create(thread_t *, void *(*)(void *), void *);
 int thread_join(thread_t, void **);
 void thread_exit(void *);
+
+// semapore.c
+int xem_init(xem_t *semapore);
+int xem_wait(xem_t *semapore);
+int xem_unlock(xem_t *semapore);
