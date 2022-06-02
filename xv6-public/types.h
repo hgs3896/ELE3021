@@ -3,5 +3,5 @@ typedef unsigned short ushort;
 typedef unsigned char  uchar;
 typedef uint pde_t;
 typedef uint thread_t;
-#include "semapore.h"
+#include "semaphore.h"
 typedef struct xem_t xem_t;

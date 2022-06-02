@@ -48,7 +48,7 @@ main(int argc, char *argv[])
   }
   printf(1, "\nIts sequence could be mixed\n");
 
-  printf(1, "2. Test with synchronization of a binary semapore\n");
+  printf(1, "2. Test with synchronization of a binary semaphore\n");
   xem_init(&sem);
   xem_wait(&sem);
   for(int i = 0; i < N; ++i) {
@@ -66,7 +66,7 @@ main(int argc, char *argv[])
   }
   printf(1, "\nIts sequence must be sorted\n");
 
-  printf(1, "3. Test with synchronization of a semapore with 3 users\n");
+  printf(1, "3. Test with synchronization of a semaphore with 3 users\n");
   xem_init(&sem);
   sem.lock_caps = 3;
   xem_wait(&sem);

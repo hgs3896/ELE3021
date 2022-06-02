@@ -1,10 +1,10 @@
 #pragma once
 #include "spinlock.h"
 
-// Semapores
+// Semaphores
 struct xem_t {
-  int lock_caps;     // Capacity of this semapore
-  struct spinlock lk; // spinlock protecting this semapore
+  int lock_caps;     // Capacity of this semaphore
+  struct spinlock lk; // spinlock protecting this semaphore
 
   // For debugging:
   char *name; // Name of lock.
