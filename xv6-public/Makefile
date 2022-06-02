@@ -199,6 +199,7 @@ UPROGS=\
 	_test_scheduler\
 	_test_malloc\
 	_test_lwp\
+	_test_sem\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
@@ -278,6 +279,7 @@ EXTRA=\
 	test_scheduler.c\
 	test_malloc.c\
 	test_lwp.c\
+	test_sem.c\
 
 dist:
 	rm -rf dist
