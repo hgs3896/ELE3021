@@ -55,3 +55,10 @@ void thread_exit(void *);
 int xem_init(xem_t *semaphore);
 int xem_wait(xem_t *semaphore);
 int xem_unlock(xem_t *semaphore);
+
+// rwlock.c
+int rwlock_init(rwlock_t *rwlock);
+int rwlock_acquire_readlock(rwlock_t *rwlock);
+int rwlock_acquire_writelock(rwlock_t *rwlock);
+int rwlock_release_readlock(rwlock_t *rwlock);
+int rwlock_release_writelock(rwlock_t *rwlock);

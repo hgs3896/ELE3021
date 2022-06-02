@@ -36,6 +36,7 @@ OBJS = \
 	impl_set_cpu_share.o\
 	lwp.o\
 	semaphore.o\
+	rwlock.o\
 
 # Cross-compiling (e.g., on Mac OS X)
 ifeq ($(shell uname), Darwin)
