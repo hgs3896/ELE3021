@@ -15,8 +15,6 @@ xem_init(xem_t *semaphore, int cap)
 {
   initlock(&semaphore->lk, "semaphore");
   semaphore->lock_caps = cap;
-  semaphore->name = "semaphore";
-  semaphore->pid = 0;
 }
 
 void
@@ -27,7 +25,6 @@ xem_wait(xem_t *semaphore)
     sleep(semaphore, &semaphore->lk);
   }
   --semaphore->lock_caps;
-  semaphore->pid = myproc()->pid;
   release(&semaphore->lk);
 }
 
@@ -36,7 +33,6 @@ xem_unlock(xem_t *semaphore)
 {
   acquire(&semaphore->lk);
   ++semaphore->lock_caps;
-  semaphore->pid = 0;
   wakeup(semaphore);
   release(&semaphore->lk);
 }
