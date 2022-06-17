@@ -177,9 +177,13 @@ growproc(int n)
   uint sz;
   struct proc *curproc = myproc();
 
-  acquire(&ptable.lock);
+  acquiresleep(&curproc->lock);
   sz = curproc->sz;
   if(n > 0){
+    struct lwp** p_last_lwp = &myproc()->lwps[NLWPS - 1];
+    while(*p_last_lwp == 0 && p_last_lwp > &myproc()->lwps[0]) --p_last_lwp;
+    if(sz + n > stack_top_lwp(p_last_lwp))
+      return -1;
     if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
   } else if(n < 0){
@@ -188,7 +192,7 @@ growproc(int n)
   }
   curproc->sz = sz;
   switchuvm(curproc);
-  release(&ptable.lock);
+  releasesleep(&curproc->lock);
   return 0;
 }
 
