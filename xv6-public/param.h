@@ -12,7 +12,7 @@
 #define MAXOPBLOCKS  10  // max # of blocks any FS op writes
 #define LOGSIZE      (MAXOPBLOCKS*3)  // max data blocks in on-disk log
 #define NBUF         (MAXOPBLOCKS*3)  // size of disk block cache
-#define FSSIZE       1000  // size of file system in blocks
+#define FSSIZE       40000  // size of file system in blocks
 #define USERTOP      0x7fffe000 // top of user stack
 #define NPAGESPERLWP 6 // maximum number of pages that a lwp can use
 #define MAX_LWPS (NLWPS * NLWPS) // maximum number of lwps in a system
