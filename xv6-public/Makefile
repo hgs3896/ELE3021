@@ -199,8 +199,10 @@ UPROGS=\
 	_stridetests\
 	_test_scheduler\
 	_test_malloc\
+	_test_lwp\
 	_test_sem\
 	_test_rwlock\
+	_test_fs\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
@@ -239,6 +241,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 ifndef CPUS
 CPUS := 2
 endif
+QEMUEXTRA = -snapshot
 QEMUOPTS = -drive file=fs.img,index=1,media=disk,format=raw -drive file=xv6.img,index=0,media=disk,format=raw -smp $(CPUS) -m 512 $(QEMUEXTRA)
 
 qemu: fs.img xv6.img
@@ -279,8 +282,10 @@ EXTRA=\
 	stridetests.c\
 	test_scheduler.c\
 	test_malloc.c\
+	test_lwp.c\
 	test_sem.c\
 	test_rwlock.c\
+	test_fs.c\
 
 dist:
 	rm -rf dist
