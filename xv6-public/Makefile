@@ -203,6 +203,7 @@ UPROGS=\
 	_test_sem\
 	_test_rwlock\
 	_test_fs\
+	_test_prw\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
@@ -286,6 +287,7 @@ EXTRA=\
 	test_sem.c\
 	test_rwlock.c\
 	test_fs.c\
+	test_prw.c\
 
 dist:
 	rm -rf dist
