@@ -62,3 +62,7 @@ int rwlock_acquire_readlock(rwlock_t *rwlock);
 int rwlock_acquire_writelock(rwlock_t *rwlock);
 int rwlock_release_readlock(rwlock_t *rwlock);
 int rwlock_release_writelock(rwlock_t *rwlock);
+
+// sysfile.c
+int pread(int, void*, int, int);
+int pwrite(int, const void*, int, int);
