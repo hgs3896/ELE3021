@@ -100,7 +100,7 @@ ls(char *path)
 
   switch(st.type){
   case T_FILE:
-    char* sz_str = fmtsz(st.size);
+    sz_str = fmtsz(st.size);
     printf(1, "%s %d %d %s\n", fmtname(path), st.type, st.ino, sz_str);
     free(sz_str);
     break;
