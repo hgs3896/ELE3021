@@ -85,6 +85,7 @@ ls(char *path)
   int fd;
   struct dirent de;
   struct stat st;
+  char* sz_str;
 
   if((fd = open(path, 0)) < 0){
     printf(2, "ls: cannot open %s\n", path);
@@ -121,7 +122,7 @@ ls(char *path)
         printf(1, "ls: cannot stat %s\n", buf);
         continue;
       }
-      char* sz_str = fmtsz(st.size);
+      sz_str = fmtsz(st.size);
       printf(1, "%s %d %d %s\n", fmtname(buf), st.type, st.ino, sz_str);
       free(sz_str);
     }
